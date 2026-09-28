@@ -1,4 +1,5 @@
 import { normalizeCustomRuleGroups } from '../utils/customRuleGroups.js';
+import { validateTemplateLines } from '../config/ruleTemplate.js';
 import { InvalidConfigError } from './errors.js';
 
 export const ADMIN_CONFIG_KEY = 'admin:config';
@@ -70,6 +71,16 @@ export class AdminConfigService {
         // would silently reset every other section to defaults.
         const existing = await this.getConfig();
         const config = normalizeAdminConfig({ ...existing, ...raw });
+
+        // Compile-time structural check: a dangling ruleset target or group reference is
+        // silently dropped when generating configs, so reject it at save time instead.
+        const issues = config.templates.flatMap(template =>
+            validateTemplateLines(template.subconverterLines, template.omittedGroups)
+                .map(issue => `Template "${template.name || template.id}": ${issue}`)
+        );
+        if (issues.length > 0) {
+            throw new InvalidConfigError(issues.slice(0, 10).join('; '));
+        }
 
         let payload;
         try {

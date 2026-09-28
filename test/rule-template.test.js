@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildTemplateClashSections, generateTemplateSubconverterConfig } from '../src/config/ruleTemplate.js';
+import { buildTemplateClashSections, generateTemplateSubconverterConfig, validateTemplateLines } from '../src/config/ruleTemplate.js';
 
 const PROXY_NAMES = ['🇭🇰 香港01', '🇯🇵 日本01', '🇺🇲 美国01', 'HK-Edge', 'US-Relay'];
 const PROVIDER_NAMES = ['provider-a', 'provider-b'];
@@ -455,5 +455,55 @@ describe('generateTemplateSubconverterConfig', () => {
         expect(lines.filter(line => line.startsWith('clash_rule_base='))).toHaveLength(1);
         expect(lines.filter(line => line.startsWith('quanx_rule_base='))).toHaveLength(1);
         expect(lines.at(-1)).toBe(';luck');
+    });
+});
+describe('validateTemplateLines', () => {
+    it('accepts a self-consistent template', () => {
+        expect(validateTemplateLines(COMPLEX_TEMPLATE.subconverterLines, COMPLEX_TEMPLATE.omittedGroups)).toEqual([]);
+    });
+
+    it('flags a ruleset target with no matching group definition', () => {
+        const issues = validateTemplateLines([
+            'ruleset=Proxy,https://a.test/x.list',
+            'custom_proxy_group=Final`select`[]DIRECT'
+        ]);
+
+        expect(issues).toEqual(['ruleset target "Proxy" has no matching custom_proxy_group']);
+    });
+
+    it('flags a [] reference to an undefined group', () => {
+        const issues = validateTemplateLines([
+            'custom_proxy_group=Pick`select`[]Missing`[]DIRECT'
+        ]);
+
+        expect(issues).toEqual(['group reference []Missing has no matching custom_proxy_group']);
+    });
+
+    it('flags malformed group lines and empty ruleset targets', () => {
+        const issues = validateTemplateLines([
+            'custom_proxy_group=OnlyName',
+            'ruleset=,https://a.test/x.list'
+        ]);
+
+        expect(issues).toHaveLength(2);
+        expect(issues[0]).toContain('missing a name or type');
+        expect(issues[1]).toContain('empty target group');
+    });
+
+    it('allows built-in targets and omitted groups', () => {
+        const issues = validateTemplateLines([
+            'ruleset=DIRECT,[]GEOIP,CN',
+            'ruleset=REJECT,https://a.test/ads.list',
+            'ruleset=Gone,https://a.test/g.list',
+            'custom_proxy_group=Final`select`[]DIRECT`[]Gone'
+        ], ['Gone']);
+
+        expect(issues).toEqual([]);
+    });
+
+    it('ignores unknown directives and tolerates garbage input', () => {
+        expect(validateTemplateLines(['enable_rule_generator=true', '[custom]', '', null, 42])).toEqual([]);
+        expect(validateTemplateLines(null)).toEqual([]);
+        expect(validateTemplateLines('nope')).toEqual([]);
     });
 });

@@ -293,13 +293,24 @@ export const adminLogicFn = (t) => {
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify(built.config)
                     });
-                    if (!response.ok) throw new Error('HTTP ' + response.status);
+                    if (!response.ok) {
+                        // why: validation errors (e.g. dangling template references) carry a
+                        // server-written message that pinpoints the broken line
+                        let detail = '';
+                        try {
+                            const body = await response.json();
+                            if (body && typeof body.error === 'string') detail = body.error;
+                        } catch { }
+                        throw new Error(detail || 'HTTP ' + response.status);
+                    }
 
                     this.saveState = 'saved';
                     this.saveMessage = text('adminSaved');
                 } catch (error) {
                     this.saveState = 'failed';
-                    this.saveMessage = text('adminSaveFailed');
+                    this.saveMessage = error?.message && !error.message.startsWith('HTTP ')
+                        ? error.message
+                        : text('adminSaveFailed');
                 }
             },
 

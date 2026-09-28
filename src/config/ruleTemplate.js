@@ -15,6 +15,58 @@
 
 const RULESET_PREFIX = 'ruleset=';
 const PROXY_GROUP_PREFIX = 'custom_proxy_group=';
+// Clash built-in policy targets that never need a custom_proxy_group definition.
+const BUILTIN_RULE_TARGETS = new Set(['DIRECT', 'REJECT', 'REJECT-DROP', 'PASS']);
+
+/**
+ * Static sanity check for template INI lines. Returns human-readable issues; an empty
+ * list means the template compiles to a self-consistent Clash rule section. Unknown
+ * directives are ignored on purpose: /subconverter passes them through verbatim.
+ */
+export function validateTemplateLines(subconverterLines, omittedGroups = []) {
+	const lines = (Array.isArray(subconverterLines) ? subconverterLines : [])
+		.filter(line => typeof line === 'string' && line.trim());
+	const omitted = new Set(Array.isArray(omittedGroups) ? omittedGroups : []);
+	const issues = [];
+
+	const definedGroups = new Set();
+	for (const line of lines) {
+		if (!line.startsWith(PROXY_GROUP_PREFIX)) continue;
+		const [name, type] = line.slice(PROXY_GROUP_PREFIX.length).split('`');
+		if (!name || !type) {
+			issues.push(`custom_proxy_group line is missing a name or type: "${line}"`);
+			continue;
+		}
+		definedGroups.add(name);
+	}
+
+	// Omitted groups are intentionally dropped at compile time, so referencing one is
+	// the author's choice rather than a dangling reference.
+	const knownTargets = new Set([...definedGroups, ...omitted, ...BUILTIN_RULE_TARGETS]);
+
+	for (const line of lines) {
+		if (line.startsWith(RULESET_PREFIX)) {
+			const target = line.slice(RULESET_PREFIX.length).split(',')[0].trim();
+			if (!target) {
+				issues.push(`ruleset line has an empty target group: "${line}"`);
+			} else if (!knownTargets.has(target)) {
+				issues.push(`ruleset target "${target}" has no matching custom_proxy_group`);
+			}
+			continue;
+		}
+		if (!line.startsWith(PROXY_GROUP_PREFIX)) continue;
+		const [, , ...parts] = line.slice(PROXY_GROUP_PREFIX.length).split('`');
+		for (const member of parts) {
+			if (!member.startsWith('[]')) continue;
+			const ref = member.slice(2);
+			if (ref && !knownTargets.has(ref)) {
+				issues.push(`group reference []${ref} has no matching custom_proxy_group`);
+			}
+		}
+	}
+
+	return issues;
+}
 
 /**
  * Templates may come from stored data, so keep every read defensive: a partial

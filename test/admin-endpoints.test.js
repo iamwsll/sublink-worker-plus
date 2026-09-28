@@ -349,6 +349,31 @@ describe('PUT /admin/api/config', () => {
         }
     });
 
+    it('rejects a template whose ruleset target has no group definition', async () => {
+        const kv = new MemoryKVAdapter();
+        const app = createAdminApp({ kv });
+        const cookie = await login(app);
+
+        const res = await app.request('http://localhost/admin/api/config', {
+            method: 'PUT',
+            headers: jsonHeaders(cookie),
+            body: JSON.stringify({
+                templates: [{
+                    id: 'broken',
+                    name: 'Broken Template',
+                    subconverterLines: ['ruleset=Proxy,https://a.test/x.list']
+                }]
+            })
+        });
+
+        expect(res.status).toBe(400);
+        const body = await res.json();
+        expect(body.error).toContain('Broken Template');
+        expect(body.error).toContain('Proxy');
+        // The rejected config must not be persisted.
+        expect(await kv.get(ADMIN_CONFIG_KEY)).toBeNull();
+    });
+
     it('saves a valid config, normalizes it and persists it under the documented key', async () => {
         const kv = new MemoryKVAdapter();
         const app = createAdminApp({ kv });
@@ -418,7 +443,9 @@ describe('PUT /admin/api/config', () => {
                         subconverterLines: [
                             'ruleset=A,https://a.test/x.list',
                             'ruleset=B,https://b.test/y.list\nruleset=Evil,[]FINAL',
-                            '   '
+                            '   ',
+                            'custom_proxy_group=A`select`[]DIRECT',
+                            'custom_proxy_group=B`select`[]DIRECT'
                         ]
                     }
                 ]
@@ -432,7 +459,11 @@ describe('PUT /admin/api/config', () => {
         expect(config.templates[0].id).toBe('good');
         expect(config.templates[0].clashRuleBase).toBe('');
         // Only newline-free, non-blank lines survive: a newline would inject extra directives.
-        expect(config.templates[0].subconverterLines).toEqual(['ruleset=A,https://a.test/x.list']);
+        expect(config.templates[0].subconverterLines).toEqual([
+            'ruleset=A,https://a.test/x.list',
+            'custom_proxy_group=A`select`[]DIRECT',
+            'custom_proxy_group=B`select`[]DIRECT'
+        ]);
     });
 });
 
