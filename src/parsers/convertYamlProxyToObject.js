@@ -1,3 +1,18 @@
+import { parseBool } from '../utils.js';
+
+function buildRealityConfig(reality) {
+    if (!reality) return undefined;
+    const supportX25519Mlkem768 = parseBool(reality['support-x25519mlkem768']);
+    return {
+        enabled: true,
+        public_key: reality['public-key'],
+        short_id: reality['short-id'],
+        ...(supportX25519Mlkem768 !== undefined
+            ? { support_x25519mlkem768: supportX25519Mlkem768 }
+            : {})
+    };
+}
+
 export function convertYamlProxyToObject(p) {
     if (!p || typeof p !== 'object' || !p.type) return null;
     const type = String(p.type).toLowerCase();
@@ -77,7 +92,7 @@ export function convertYamlProxyToObject(p) {
                     server_name: p.servername || p.sni,
                     insecure: !!p['skip-cert-verify'],
                     ...(reality
-                        ? { reality: { enabled: true, public_key: reality['public-key'], short_id: reality['short-id'] } }
+                        ? { reality: buildRealityConfig(reality) }
                         : {})
                 }
                 : { enabled: false };
@@ -132,7 +147,7 @@ export function convertYamlProxyToObject(p) {
                     server_name: p.servername || p.sni,
                     insecure: !!p['skip-cert-verify'],
                     ...(reality
-                        ? { reality: { enabled: true, public_key: reality['public-key'], short_id: reality['short-id'] } }
+                        ? { reality: buildRealityConfig(reality) }
                         : {})
                 }
                 : { enabled: false };
