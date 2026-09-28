@@ -13,8 +13,15 @@ const LINK_FIELDS = [
   { key: 'surge', labelKey: 'surgeLink' }
 ];
 
+// Admin-supplied names are interpolated into an inline <script>, where JSON.stringify alone
+// leaves `</script>` live and would end the block early; escaping `<` keeps the JSON valid
+// inside a JS string literal and inert for the HTML parser.
+const toScriptJson = (value) => JSON.stringify(value).replace(/</g, '\\u003c');
+
 export const Form = (props) => {
-  const { t, lang } = props;
+  const { t, lang, adminConfig } = props;
+  // Backend-defined rule groups are rendered as extra checkboxes below the built-in list.
+  const adminRuleSets = adminConfig?.customRuleSets || [];
 
   const translations = {
     processing: t('processing'),
@@ -34,12 +41,23 @@ export const Form = (props) => {
     customShortCode: t('customShortCode'),
     optional: t('optional'),
     customShortCodePlaceholder: t('customShortCodePlaceholder'),
-    showFullLinks: t('showFullLinks')
+    showFullLinks: t('showFullLinks'),
+    followBuiltInDefault: t('followBuiltInDefault'),
+    // The policy selects render inside Alpine templates, so outbound names must be reachable
+    // from the injected runtime rather than only from the server render.
+    outboundNames: {
+      'Node Select': t('outboundNames.Node Select'),
+      'Auto Select': t('outboundNames.Auto Select'),
+      'Fall Back': t('outboundNames.Fall Back'),
+      'Manual Switch': t('outboundNames.Manual Switch')
+    }
   };
 
   const scriptContent = `
-    window.APP_TRANSLATIONS = ${JSON.stringify(translations)};
-    window.PREDEFINED_RULE_SETS = ${JSON.stringify(PREDEFINED_RULE_SETS)};
+    window.APP_TRANSLATIONS = ${toScriptJson(translations)};
+    window.PREDEFINED_RULE_SETS = ${toScriptJson(PREDEFINED_RULE_SETS)};
+    window.ADMIN_RULE_SETS = ${toScriptJson(adminRuleSets)};
+    window.ADMIN_GROUP_DEFAULTS = ${toScriptJson(adminConfig?.groupDefaults || {})};
     window.APP_LANG = ${JSON.stringify(lang || 'zh-CN')};
     if (typeof __name === 'undefined') { var __name = function(fn) { return fn; }; }
     (${formLogicFn.toString()})();
@@ -153,12 +171,148 @@ export const Form = (props) => {
         </span>
       </label>
     ))}
+    {adminRuleSets.map((ruleSet) => (
+      <label class="flex items-center p-3 rounded-lg border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700/50 cursor-pointer transition-colors group">
+        <input
+          type="checkbox"
+          value={ruleSet.name}
+          x-model="selectedRules"
+          x-on:change="selectedPredefinedRule = 'custom'"
+          class="w-4 h-4 text-primary-600 rounded border-gray-300 focus:ring-primary-500 dark:bg-gray-700 dark:border-gray-600"
+        />
+        {/* Admin-defined names are user data, so they are shown verbatim instead of through t(). */}
+        <span class="ml-3 text-sm font-medium text-gray-700 dark:text-gray-300 group-hover:text-gray-900 dark:group-hover:text-white transition-colors">
+          {ruleSet.name}
+        </span>
+      </label>
+    ))}
+  </div>
+
+  {/* Per-rule policy default override. Rendered statically (with x-show) instead of through
+      x-for so every select binds to a literal groupDefaults key. */}
+  <div class="mt-6">
+    <h4 class="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">{t('policyDefaultOption')}</h4>
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+      {UNIFIED_RULES.concat(adminRuleSets).map((rule) => (
+        <div
+          x-show={`selectedRules.includes(${JSON.stringify(rule.name)})`}
+          class="p-3 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900"
+        >
+          <label class="block text-xs text-gray-500 dark:text-gray-400 mb-1">{rule.name}</label>
+          <select
+            x-model={`groupDefaults[${JSON.stringify(rule.name)}]`}
+            class="w-full px-2 py-1.5 rounded border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-700 text-xs text-gray-700 dark:text-gray-200 focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+          >
+            {/* The empty option means "no UI override"; its label spells out the effective default. */}
+            <option value="" x-text={`getFollowBuiltInDefaultLabel(${JSON.stringify(rule.name)})`}>{t('followBuiltInDefault')}</option>
+            <option value="DIRECT">DIRECT</option>
+            <option value="REJECT">REJECT</option>
+            <option value="Node Select" x-text="translateOutbound('Node Select')"></option>
+            <option value="Auto Select" x-text="translateOutbound('Auto Select')"></option>
+          </select>
+        </div>
+      ))}
+    </div>
   </div>
 
           </div>
 
   {/* Custom Rules Component */ }
   <CustomRules t={t} />
+
+  {/* Custom Rule Groups */ }
+  <div class="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-700 p-6">
+    <div class="flex items-center justify-between mb-4">
+      <h3 class="text-lg font-semibold text-gray-900 dark:text-white flex items-center gap-2">
+        <i class="fas fa-layer-group text-gray-400"></i>
+        {t('customRuleGroups')}
+      </h3>
+      <button
+        type="button"
+        x-on:click="addCustomRuleGroup(); selectedPredefinedRule = 'custom'"
+        class="px-3 py-1.5 text-xs rounded-lg border border-primary-200 dark:border-primary-700 text-primary-600 dark:text-primary-400 hover:bg-primary-50 dark:hover:bg-primary-900/20 transition-colors"
+      >
+        {t('addCustomRuleGroup')}
+      </button>
+    </div>
+
+    <div class="space-y-4">
+      <template x-for="(customGroup, groupIndex) in customRuleGroups" x-bind:key="groupIndex">
+        <div class="p-3 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 space-y-3">
+          <div class="flex items-center gap-2">
+            <input
+              type="checkbox"
+              x-bind:value="customGroup.name"
+              x-model="selectedRules"
+              x-on:change="selectedPredefinedRule = 'custom'"
+              class="w-4 h-4 text-primary-600 rounded border-gray-300 focus:ring-primary-500 dark:bg-gray-700 dark:border-gray-600"
+            />
+            <input
+              type="text"
+              x-model="customGroup.name"
+              x-on:input="selectedPredefinedRule = 'custom'"
+              class="flex-1 px-3 py-2 text-sm rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+              placeholder={t('customRuleGroupNamePlaceholder')}
+            />
+            <button
+              type="button"
+              x-on:click="removeCustomRuleGroup(groupIndex); selectedPredefinedRule = 'custom'"
+              class="px-2 py-2 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors"
+              title={t('removeCustomRuleGroup')}
+            >
+              <i class="fas fa-trash-alt"></i>
+            </button>
+          </div>
+
+          <template x-for="(url, urlIndex) in customGroup.urls" x-bind:key="urlIndex">
+            <div class="flex items-center gap-2">
+              <input
+                type="url"
+                x-model="customGroup.urls[urlIndex]"
+                x-on:input="selectedPredefinedRule = 'custom'"
+                class="flex-1 px-3 py-2 text-sm rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                placeholder="https://example.com/rules.list"
+              />
+              <button
+                type="button"
+                x-on:click="removeRuleSetUrl(groupIndex, urlIndex); selectedPredefinedRule = 'custom'"
+                class="px-2 py-2 text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+                title={t('removeRuleSetUrl')}
+              >
+                <i class="fas fa-minus"></i>
+              </button>
+            </div>
+          </template>
+
+          <div>
+            <button
+              type="button"
+              x-on:click="addRuleSetUrl(groupIndex); selectedPredefinedRule = 'custom'"
+              class="px-3 py-1.5 text-xs rounded-lg border border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors"
+            >
+              {t('addRuleSetUrl')}
+            </button>
+          </div>
+
+          {/* Locally authored groups are not known at render time, so their override key is bound
+              dynamically (admin-defined groups get a static select above instead). */}
+          <div x-show="customGroup.name && selectedRules.includes(customGroup.name)">
+            <label class="block text-xs text-gray-500 dark:text-gray-400 mb-1">{t('policyDefaultOption')}</label>
+            <select
+              x-model="groupDefaults[customGroup.name]"
+              class="w-full px-2 py-1.5 rounded border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-700 text-xs text-gray-700 dark:text-gray-200 focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+            >
+              <option value="">{t('followBuiltInDefault')}</option>
+              <option value="DIRECT">DIRECT</option>
+              <option value="REJECT">REJECT</option>
+              <option value="Node Select" x-text="translateOutbound('Node Select')"></option>
+              <option value="Auto Select" x-text="translateOutbound('Auto Select')"></option>
+            </select>
+          </div>
+        </div>
+      </template>
+    </div>
+  </div>
 
     {/* General Options */ }
     <div class="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-700 p-6">
@@ -191,6 +345,24 @@ export const Form = (props) => {
                   <div class="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-primary-300 dark:peer-focus:ring-primary-800 rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-primary-600"></div>
                 </div>
               </label>
+
+              <label class="flex items-center justify-between p-3 rounded-lg bg-gray-50 dark:bg-gray-700/30 hover:bg-gray-100 dark:hover:bg-gray-700/50 transition-colors cursor-pointer">
+                <span class="font-medium text-gray-700 dark:text-gray-300">{t('enableUdp')}</span>
+                <div class="relative inline-flex items-center cursor-pointer">
+                  <input type="checkbox" x-model="forceUdp" class="sr-only peer" />
+                  <div class="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-primary-300 dark:peer-focus:ring-primary-800 rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-primary-600"></div>
+                </div>
+              </label>
+
+              <div>
+                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{t('clashRuleBaseUrl')}</label>
+                <input
+                  type="url"
+                  x-model="clashRuleBase"
+                  class="w-full px-4 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                  placeholder={t('clashRuleBaseUrlPlaceholder')}
+                />
+              </div>
 
               <div
                 x-show="enableClashUI"

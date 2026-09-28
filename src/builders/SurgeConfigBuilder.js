@@ -2,17 +2,19 @@ import { BaseConfigBuilder } from './BaseConfigBuilder.js';
 import { groupProxiesByCountry } from '../utils.js';
 import { SURGE_CONFIG, SURGE_SITE_RULE_SET_BASEURL, SURGE_IP_RULE_SET_BASEURL, generateRules, getOutbounds, PREDEFINED_RULE_SETS, DIRECT_DEFAULT_RULES } from '../config/index.js';
 import { addProxyWithDedup } from './helpers/proxyHelpers.js';
-import { buildSelectorMembers, buildNodeSelectMembers, buildCustomRuleMembers, uniqueNames } from './helpers/groupBuilder.js';
+import { buildSelectorMembers, buildNodeSelectMembers, buildCustomRuleMembers, uniqueNames, applyGroupPreferredDefault } from './helpers/groupBuilder.js';
 
 export class SurgeConfigBuilder extends BaseConfigBuilder {
-    constructor(inputString, selectedRules, customRules, baseConfig, lang, userAgent, groupByCountry, includeAutoSelect = true) {
+    constructor(inputString, selectedRules, customRules, baseConfig, lang, userAgent, groupByCountry, includeAutoSelect = true, groupDefaults = {}, customRuleGroups = []) {
         const resolvedBaseConfig = baseConfig ?? SURGE_CONFIG;
         super(inputString, resolvedBaseConfig, lang, userAgent, groupByCountry, includeAutoSelect);
         this.selectedRules = selectedRules;
         this.customRules = customRules;
+        this.customRuleGroups = Array.isArray(customRuleGroups) ? customRuleGroups : [];
         this.subscriptionUrl = null;
         this.countryGroupNames = [];
         this.manualGroupName = null;
+        this.groupDefaults = groupDefaults && typeof groupDefaults === 'object' ? groupDefaults : {};
     }
 
     setSubscriptionUrl(url) {
@@ -286,6 +288,7 @@ export class SurgeConfigBuilder extends BaseConfigBuilder {
                 if (DIRECT_DEFAULT_RULES.has(outbound)) {
                     options = ['DIRECT', ...options.filter(p => p !== 'DIRECT')];
                 }
+                options = applyGroupPreferredDefault(options, this.groupDefaults[outbound], this.t);
                 this.config['proxy-groups'].push(
                     this.createProxyGroup(name, 'select', options)
                 );
@@ -373,7 +376,7 @@ export class SurgeConfigBuilder extends BaseConfigBuilder {
     }
 
     formatConfig() {
-        const rules = generateRules(this.selectedRules, this.customRules);
+        const rules = generateRules(this.selectedRules, this.customRules, this.customRuleGroups);
         let finalConfig = [];
 
         if (this.subscriptionUrl) {

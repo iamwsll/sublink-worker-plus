@@ -8,6 +8,7 @@ export class BaseConfigBuilder {
         this.inputString = inputString;
         this.config = deepCopy(baseConfig);
         this.customRules = [];
+        this.customRuleGroups = [];
         this.selectedRules = [];
         this.t = createTranslator(lang);
         this.userAgent = userAgent;
@@ -327,11 +328,11 @@ export class BaseConfigBuilder {
     getOutboundsList() {
         let outbounds;
         if (typeof this.selectedRules === 'string' && PREDEFINED_RULE_SETS[this.selectedRules]) {
-            outbounds = getOutbounds(PREDEFINED_RULE_SETS[this.selectedRules]);
+            outbounds = getOutbounds(PREDEFINED_RULE_SETS[this.selectedRules], this.customRuleGroups);
         } else if (this.selectedRules && Object.keys(this.selectedRules).length > 0) {
-            outbounds = getOutbounds(this.selectedRules);
+            outbounds = getOutbounds(this.selectedRules, this.customRuleGroups);
         } else {
-            outbounds = getOutbounds(PREDEFINED_RULE_SETS.minimal);
+            outbounds = getOutbounds(PREDEFINED_RULE_SETS.minimal, this.customRuleGroups);
         }
         return outbounds;
     }
@@ -421,7 +422,7 @@ export class BaseConfigBuilder {
     }
 
     generateRules() {
-        return generateRules(this.selectedRules, this.customRules);
+        return generateRules(this.selectedRules, this.customRules, this.customRuleGroups);
     }
 
     formatConfig() {

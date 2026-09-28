@@ -67,6 +67,21 @@ Sing-Box • Clash • Xray/V2Ray • Surge
 - Multi-language support (Chinese, English, Persian, Russian)
 - Web interface with predefined rule sets and customizable policy groups
 
+### Admin Panel
+- Set `ADMIN_PASSWORD` to enable the web admin panel at `/admin` (disabled when unset)
+- Manage server-side defaults without redeploying: default rule preset, global custom rule sets (name + rule-list URLs), policy-group default options, remote Clash base config URL and cache TTL
+- Rule templates: paste subconverter INI lines (`ruleset=` / `custom_proxy_group=`) to fully own the Clash rules/groups output
+- Config is stored in KV (`admin:config`) with an in-memory fallback when KV is unavailable
+
+### Extra Query Parameters
+- `customRuleGroups` — JSON array of `[{name, urls: []}]`; creates or overrides rule groups backed by remote rule lists (works on /singbox, /clash, /surge, /subconverter)
+- `group_defaults` — JSON object mapping a policy group name to its preferred default option (e.g. `{"Bilibili":"DIRECT"}`)
+- `udp` — `true`/`false` forces the udp flag on every Clash proxy
+- `clash_rule_base` — remote Clash YAML used as the base config for /clash (cached; tune with `clash_rule_base_ttl`, force refresh with `clash_rule_base_refresh=true`)
+- `template` — apply an admin-defined rule template by id
+
+Environment variables: `ADMIN_PASSWORD`, `CLASH_RULE_BASE_CACHE_TTL_SECONDS` (default 600).
+
 ## 🤝 Contributing
 
 Issues and Pull Requests are welcome to improve this project.

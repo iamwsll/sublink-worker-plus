@@ -11,7 +11,9 @@ export function createVercelRuntime(env = process.env) {
         logger: console,
         config: {
             configTtlSeconds: undefined,
-            shortLinkTtlSeconds: null
+            shortLinkTtlSeconds: null,
+            clashRuleBaseCacheTtlSeconds: parseNumber(env.CLASH_RULE_BASE_CACHE_TTL_SECONDS) ?? undefined,
+            adminPassword: env.ADMIN_PASSWORD || null
         }
     };
 }
@@ -80,4 +82,10 @@ function buildCommonRedisOptions(env) {
         options.tls = {};
     }
     return options;
+}
+
+function parseNumber(value) {
+    if (value === undefined || value === null || value === '') return null;
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
 }

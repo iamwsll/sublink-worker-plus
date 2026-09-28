@@ -10,13 +10,19 @@ import { SingboxConfigBuilder } from '../builders/SingboxConfigBuilder.js';
 import { ClashConfigBuilder } from '../builders/ClashConfigBuilder.js';
 import { SurgeConfigBuilder } from '../builders/SurgeConfigBuilder.js';
 import { createTranslator, resolveLanguage } from '../i18n/index.js';
-import { encodeBase64, tryDecodeSubscriptionLines } from '../utils.js';
+import { encodeBase64, tryDecodeSubscriptionLines, parseBool } from '../utils.js';
 import { APP_NAME, APP_SUBTITLE } from '../constants.js';
 import { ShortLinkService } from '../services/shortLinkService.js';
 import { ConfigStorageService } from '../services/configStorageService.js';
+import { AdminConfigService } from '../services/adminConfigService.js';
+import { normalizeClashRuleBaseCacheTtl, resolveClashRuleBaseConfig } from '../services/clashRuleBaseCache.js';
 import { ServiceError, MissingDependencyError } from '../services/errors.js';
 import { normalizeRuntime } from '../runtime/runtimeConfig.js';
 import { PREDEFINED_RULE_SETS, SING_BOX_CONFIG, SING_BOX_CONFIG_V1_11, generateSubconverterConfig } from '../config/index.js';
+import { generateTemplateSubconverterConfig } from '../config/ruleTemplate.js';
+import { normalizeCustomRuleGroups } from '../utils/customRuleGroups.js';
+import { createAdminAuth } from './adminAuth.js';
+import { registerAdminRoutes } from './adminRoutes.js';
 
 const DEFAULT_USER_AGENT = 'curl/7.74.0';
 
@@ -24,10 +30,13 @@ export function createApp(bindings = {}) {
     const runtime = normalizeRuntime(bindings);
     const services = {
         shortLinks: runtime.kv ? new ShortLinkService(runtime.kv, { shortLinkTtlSeconds: runtime.config.shortLinkTtlSeconds }) : null,
-        configStorage: runtime.kv ? new ConfigStorageService(runtime.kv, { configTtlSeconds: runtime.config.configTtlSeconds }) : null
+        configStorage: runtime.kv ? new ConfigStorageService(runtime.kv, { configTtlSeconds: runtime.config.configTtlSeconds }) : null,
+        // Always available: the service falls back to in-memory storage when KV is absent.
+        adminConfig: new AdminConfigService(runtime.kv)
     };
 
     const app = new Hono();
+    const adminAuth = createAdminAuth(runtime.config.adminPassword);
 
     app.use('*', async (c, next) => {
         const acceptLanguage = getRequestHeader(c.req, 'Accept-Language');
@@ -37,10 +46,23 @@ export function createApp(bindings = {}) {
         await next();
     });
 
-    app.get('/', (c) => {
+    // Registered after the language middleware so admin pages can translate their chrome.
+    registerAdminRoutes(app, { runtime, services, auth: adminAuth });
+
+    app.get('/', async (c) => {
         const t = c.get('t');
         const lang = resolveLanguage(c.get('lang'));
         const subtitle = APP_SUBTITLE[lang] || APP_SUBTITLE['zh-CN'];
+        // The form pre-fills admin-defined rule sets, so a broken admin config must degrade
+        // to an empty one rather than breaking the landing page.
+        const storedConfig = await loadAdminConfig(services.adminConfig, runtime.logger);
+        const adminConfig = storedConfig
+            ? {
+                customRuleSets: storedConfig.customRuleSets,
+                groupDefaults: storedConfig.groupDefaults,
+                defaultRulePreset: storedConfig.defaultRulePreset
+            }
+            : null;
 
         return c.html(
             <Layout title={t('pageTitle')} description={t('pageDescription')} keywords={t('pageKeywords')}>
@@ -57,7 +79,7 @@ export function createApp(bindings = {}) {
                                         {subtitle}
                                     </p>
                                 </div>
-                                <Form t={t} lang={lang} />
+                                <Form t={t} lang={lang} adminConfig={adminConfig} />
                             </div>
                         </div>
                     </main>
@@ -75,11 +97,14 @@ export function createApp(bindings = {}) {
                 return c.text('Missing config parameter', 400);
             }
 
-            const selectedRules = parseSelectedRules(c.req.query('selectedRules'));
+            const adminConfig = await loadAdminConfig(services.adminConfig, runtime.logger);
+            const selectedRules = resolveSelectedRules(c.req.query('selectedRules'), adminConfig?.defaultRulePreset);
             const customRules = parseJsonArray(c.req.query('customRules'));
+            const customRuleGroups = mergeRuleGroups(adminConfig?.customRuleSets, parseCustomRuleGroups(c.req.query('customRuleGroups')));
             const ua = c.req.query('ua') || getRequestHeader(c.req, 'User-Agent') || DEFAULT_USER_AGENT;
             const groupByCountry = parseBooleanFlag(c.req.query('group_by_country'));
             const includeAutoSelect = c.req.query('include_auto_select') !== 'false';
+            const groupDefaults = resolveGroupDefaults(c.req.query('group_defaults'), adminConfig?.groupDefaults);
             const enableClashUI = parseBooleanFlag(c.req.query('enable_clash_ui'));
             const externalController = c.req.query('external_controller');
             const externalUiDownloadUrl = c.req.query('external_ui_download_url');
@@ -111,7 +136,9 @@ export function createApp(bindings = {}) {
                 externalController,
                 externalUiDownloadUrl,
                 singboxConfigVersion,
-                includeAutoSelect
+                includeAutoSelect,
+                groupDefaults,
+                customRuleGroups
             );
             await builder.build();
             const userinfo = builder.getSubscriptionUserinfo();
@@ -131,21 +158,76 @@ export function createApp(bindings = {}) {
                 return c.text('Missing config parameter', 400);
             }
 
-            const selectedRules = parseSelectedRules(c.req.query('selectedRules'));
+            const adminConfig = await loadAdminConfig(services.adminConfig, runtime.logger);
+            const selectedRules = resolveSelectedRules(c.req.query('selectedRules'), adminConfig?.defaultRulePreset);
             const customRules = parseJsonArray(c.req.query('customRules'));
+            const customRuleGroups = mergeRuleGroups(adminConfig?.customRuleSets, parseCustomRuleGroups(c.req.query('customRuleGroups')));
             const ua = c.req.query('ua') || getRequestHeader(c.req, 'User-Agent') || DEFAULT_USER_AGENT;
             const groupByCountry = parseBooleanFlag(c.req.query('group_by_country'));
             const includeAutoSelect = c.req.query('include_auto_select') !== 'false';
+            const groupDefaults = resolveGroupDefaults(c.req.query('group_defaults'), adminConfig?.groupDefaults);
             const enableClashUI = parseBooleanFlag(c.req.query('enable_clash_ui'));
             const externalController = c.req.query('external_controller');
             const externalUiDownloadUrl = c.req.query('external_ui_download_url');
             const configId = c.req.query('configId');
+            const forceUdp = parseBool(c.req.query('udp'), undefined);
             const lang = c.get('lang');
+
+            const clashRuleBase = c.req.query('clash_rule_base') || c.req.query('clashRuleBase');
+            // TTL precedence: per-request query > admin panel setting > runtime default.
+            const clashRuleBaseCacheTtl = normalizeClashRuleBaseCacheTtl(
+                c.req.query('clash_rule_base_ttl') ?? c.req.query('clashRuleBaseTtl') ?? adminConfig?.clashRuleBase?.cacheTtlSeconds,
+                runtime.config.clashRuleBaseCacheTtlSeconds
+            );
+            const refreshClashRuleBase = parseBooleanFlag(c.req.query('clash_rule_base_refresh')) ||
+                parseBooleanFlag(c.req.query('refresh_clash_rule_base'));
+
+            // A template owns the whole rule section, so it only applies when the caller did not
+            // ask for any per-request rule customisation of their own.
+            const template = resolveTemplate(adminConfig, c, [
+                'selectedRules',
+                'customRules',
+                'customRuleGroups',
+                'clash_rule_base',
+                'clashRuleBase',
+                'configId'
+            ]);
 
             let baseConfig;
             if (configId?.startsWith('clash_')) {
                 const storage = requireConfigStorage(services.configStorage);
                 baseConfig = await storage.getConfigById(configId);
+            } else if (clashRuleBase) {
+                // An explicit base URL outranks the template's own base config; the template
+                // still owns the rule section when it applies.
+                baseConfig = await resolveClashRuleBaseConfig({
+                    url: clashRuleBase,
+                    userAgent: ua,
+                    kv: runtime.kv,
+                    cacheTtlSeconds: clashRuleBaseCacheTtl,
+                    refresh: refreshClashRuleBase,
+                    logger: runtime.logger
+                });
+            } else if (template) {
+                baseConfig = await resolveTemplateClashRuleBase({
+                    template,
+                    userAgent: ua,
+                    kv: runtime.kv,
+                    cacheTtlSeconds: clashRuleBaseCacheTtl,
+                    refresh: refreshClashRuleBase,
+                    logger: runtime.logger
+                });
+            } else if (adminConfig?.clashRuleBase?.url) {
+                // The admin panel's remote base config is the lowest-precedence source:
+                // it only applies when neither the request nor a template brought its own.
+                baseConfig = await resolveClashRuleBaseConfig({
+                    url: adminConfig.clashRuleBase.url,
+                    userAgent: ua,
+                    kv: runtime.kv,
+                    cacheTtlSeconds: clashRuleBaseCacheTtl,
+                    refresh: refreshClashRuleBase,
+                    logger: runtime.logger
+                });
             }
 
             const builder = new ClashConfigBuilder(
@@ -159,7 +241,10 @@ export function createApp(bindings = {}) {
                 enableClashUI,
                 externalController,
                 externalUiDownloadUrl,
-                includeAutoSelect
+                includeAutoSelect,
+                groupDefaults,
+                forceUdp,
+                customRuleGroups
             );
             await builder.build();
             const userinfo = builder.getSubscriptionUserinfo();
@@ -167,7 +252,8 @@ export function createApp(bindings = {}) {
             if (userinfo) {
                 headers['subscription-userinfo'] = userinfo;
             }
-            return c.text(builder.formatConfig(), 200, headers);
+            const body = template ? builder.formatTemplateConfig(template) : builder.formatConfig();
+            return c.text(body, 200, headers);
         } catch (error) {
             return handleError(c, error, runtime.logger);
         }
@@ -180,11 +266,14 @@ export function createApp(bindings = {}) {
                 return c.text('Missing config parameter', 400);
             }
 
-            const selectedRules = parseSelectedRules(c.req.query('selectedRules'));
+            const adminConfig = await loadAdminConfig(services.adminConfig, runtime.logger);
+            const selectedRules = resolveSelectedRules(c.req.query('selectedRules'), adminConfig?.defaultRulePreset);
             const customRules = parseJsonArray(c.req.query('customRules'));
+            const customRuleGroups = mergeRuleGroups(adminConfig?.customRuleSets, parseCustomRuleGroups(c.req.query('customRuleGroups')));
             const ua = c.req.query('ua') || getRequestHeader(c.req, 'User-Agent') || DEFAULT_USER_AGENT;
             const groupByCountry = parseBooleanFlag(c.req.query('group_by_country'));
             const includeAutoSelect = c.req.query('include_auto_select') !== 'false';
+            const groupDefaults = resolveGroupDefaults(c.req.query('group_defaults'), adminConfig?.groupDefaults);
             const configId = c.req.query('configId');
             const lang = c.get('lang');
 
@@ -202,7 +291,9 @@ export function createApp(bindings = {}) {
                 lang,
                 ua,
                 groupByCountry,
-                includeAutoSelect
+                includeAutoSelect,
+                groupDefaults,
+                customRuleGroups
             );
             builder.setSubscriptionUrl(c.req.url);
             await builder.build();
@@ -217,13 +308,29 @@ export function createApp(bindings = {}) {
         }
     });
 
-    app.get('/subconverter', (c) => {
+    app.get('/subconverter', async (c) => {
         try {
+            const adminConfig = await loadAdminConfig(services.adminConfig, runtime.logger);
             const rawSelectedRules = c.req.query('selectedRules');
+            // /subconverter has no configId/clash_rule_base override, so the template query or
+            // the default template is the only entry point. Its base URLs are template
+            // overrides, not rule customisation, so they do not block the default template.
+            const template = resolveTemplate(adminConfig, c, ['selectedRules', 'customRules', 'customRuleGroups']);
+
+            if (template) {
+                const config = generateTemplateSubconverterConfig(template, {
+                    clashRuleBase: c.req.query('clash_rule_base') || c.req.query('clashRuleBase'),
+                    quanxRuleBase: c.req.query('quanx_rule_base') || c.req.query('quanxRuleBase')
+                });
+                return c.text(config, 200, {
+                    'Content-Type': 'text/plain; charset=utf-8'
+                });
+            }
+
             let selectedRules;
 
             if (!rawSelectedRules) {
-                selectedRules = PREDEFINED_RULE_SETS.balanced;
+                selectedRules = resolveSelectedRules(undefined, adminConfig?.defaultRulePreset);
             } else if (PREDEFINED_RULE_SETS[rawSelectedRules]) {
                 selectedRules = PREDEFINED_RULE_SETS[rawSelectedRules];
             } else {
@@ -242,14 +349,18 @@ export function createApp(bindings = {}) {
             const includeAutoSelect = c.req.query('include_auto_select') !== 'false';
             const groupByCountry = parseBooleanFlag(c.req.query('group_by_country'));
             const customRules = parseJsonArray(c.req.query('customRules'));
+            const customRuleGroups = mergeRuleGroups(adminConfig?.customRuleSets, parseCustomRuleGroups(c.req.query('customRuleGroups')));
+            const groupDefaults = resolveGroupDefaults(c.req.query('group_defaults'), adminConfig?.groupDefaults);
             const lang = c.get('lang');
 
             const config = generateSubconverterConfig({
                 selectedRules,
                 customRules,
+                customRuleGroups,
                 lang,
                 includeAutoSelect,
-                groupByCountry
+                groupByCountry,
+                groupDefaults
             });
 
             return c.text(config, 200, {
@@ -443,6 +554,127 @@ function parseJsonArray(raw) {
 
 function parseBooleanFlag(value) {
     return value === 'true' || value === true;
+}
+
+// Admin config is an optional input: a broken store must not turn every subscription
+// request into a 500, so failures degrade to "no admin config".
+async function loadAdminConfig(adminConfigService, logger) {
+    try {
+        return await adminConfigService.getConfig();
+    } catch (error) {
+        logger?.warn?.('Failed to read admin config', error);
+        return null;
+    }
+}
+
+// selectedRules keeps its historical "empty when absent" contract; the admin-defined
+// default preset is applied on top of it.
+function resolveSelectedRules(raw, defaultPreset) {
+    const selected = parseSelectedRules(raw);
+    if (raw || selected.length > 0) return selected;
+    // An unknown preset name would silently drop all rules, so fall back to balanced.
+    return PREDEFINED_RULE_SETS[defaultPreset] || PREDEFINED_RULE_SETS.balanced;
+}
+
+function parseGroupDefaults(raw) {
+    if (!raw) return {};
+    try {
+        return normalizeGroupDefaults(JSON.parse(raw));
+    } catch {
+        return {};
+    }
+}
+
+// Query values win over admin config as a whole; per-key merging would mix two sources
+// of truth for the same group.
+function resolveGroupDefaults(raw, adminGroupDefaults) {
+    const parsed = parseGroupDefaults(raw);
+    return Object.keys(parsed).length > 0 ? parsed : (adminGroupDefaults || {});
+}
+
+function normalizeGroupDefaults(parsed) {
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+        return {};
+    }
+    const normalized = {};
+    Object.entries(parsed).forEach(([groupName, preferred]) => {
+        // Only string -> string pairs can name a group and an option.
+        if (typeof preferred !== 'string') return;
+        const key = groupName.trim();
+        const value = preferred.trim();
+        if (!key || !value) return;
+        normalized[key] = value;
+    });
+    return normalized;
+}
+
+function parseCustomRuleGroups(raw) {
+    if (!raw) return [];
+    try {
+        return normalizeCustomRuleGroups(JSON.parse(raw)).map(({ name, urls }) => ({ name, urls }));
+    } catch {
+        return [];
+    }
+}
+
+// Admin rule groups are the defaults; a query group with the same name replaces it and
+// keeps its position, so query order stays authoritative for the caller.
+function mergeRuleGroups(adminSets = [], queryGroups = []) {
+    const groups = new Map();
+    (Array.isArray(adminSets) ? adminSets : []).forEach(group => {
+        if (group && typeof group.name === 'string') groups.set(group.name, group);
+    });
+    (Array.isArray(queryGroups) ? queryGroups : []).forEach(group => {
+        if (group && typeof group.name === 'string') groups.set(group.name, group);
+    });
+    return [...groups.values()];
+}
+
+/**
+ * Pick the rule template for a request.
+ *
+ * An explicit `template` id always wins. Otherwise a template only applies to a request
+ * that carries no rule customisation at all: templates own the rule section wholesale, so
+ * applying one while the caller passes selectedRules/customRules would silently discard
+ * their input.
+ *
+ * `treatAsCustomization` lists the query params that block an implicit template. Callers
+ * pass what their endpoint actually honours, because /subconverter treats its base-config
+ * overrides as template inputs rather than as rule customisation.
+ */
+function resolveTemplate(adminConfig, c, treatAsCustomization) {
+    const templates = Array.isArray(adminConfig?.templates) ? adminConfig.templates : [];
+    const requestedId = c.req.query('template');
+    if (requestedId) {
+        // Only enabled templates are reachable from a URL, even if an id is guessed.
+        return templates.find(template => template.enabled && template.id === requestedId) || null;
+    }
+
+    if (treatAsCustomization.some(param => c.req.query(param))) return null;
+
+    return templates.find(template => template.enabled && template.isDefault) ||
+        templates.find(template => template.enabled && template.id === adminConfig?.defaultRulePreset) ||
+        null;
+}
+
+// A template without its own base URL must still resolve: its embedded fallback config is
+// the only copy of the template's rule-providers available offline.
+async function resolveTemplateClashRuleBase({ template, userAgent, kv, cacheTtlSeconds, refresh, logger }) {
+    const fallbackConfig = template.fallbackClashConfig || undefined;
+    if (!template.clashRuleBase) {
+        // Nothing to fetch: the builder falls back to its built-in base config when this
+        // returns undefined, and a template fallback (when present) is used as-is.
+        return fallbackConfig;
+    }
+    return resolveClashRuleBaseConfig({
+        url: template.clashRuleBase,
+        userAgent,
+        kv,
+        cacheTtlSeconds,
+        refresh,
+        fallbackConfig,
+        logger
+    });
 }
 
 function parseSemverLike(value) {

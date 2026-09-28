@@ -13,6 +13,8 @@
  * @typedef {Object} RuntimeConfig
  * @property {number} [configTtlSeconds]
  * @property {number} [shortLinkTtlSeconds]
+ * @property {number} [clashRuleBaseCacheTtlSeconds]
+ * @property {string | null} [adminPassword]
  */
 
 /**
@@ -24,7 +26,9 @@
  */
 
 const DEFAULTS = {
-    configTtlSeconds: 60 * 60 * 24 * 30
+    configTtlSeconds: 60 * 60 * 24 * 30,
+    // Remote Clash base configs change rarely, but operators need a refresh path.
+    clashRuleBaseCacheTtlSeconds: 600
 };
 
 /**
@@ -40,7 +44,9 @@ export function normalizeRuntime(runtime = {}) {
         logger: runtime.logger ?? console,
         config: {
             configTtlSeconds: runtime.config?.configTtlSeconds ?? DEFAULTS.configTtlSeconds,
-            shortLinkTtlSeconds: runtime.config?.shortLinkTtlSeconds ?? null
+            shortLinkTtlSeconds: runtime.config?.shortLinkTtlSeconds ?? null,
+            clashRuleBaseCacheTtlSeconds: runtime.config?.clashRuleBaseCacheTtlSeconds ?? DEFAULTS.clashRuleBaseCacheTtlSeconds,
+            adminPassword: runtime.config?.adminPassword ?? null
         }
     };
 }

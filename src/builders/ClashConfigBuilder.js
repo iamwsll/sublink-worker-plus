@@ -3,9 +3,10 @@ import { CLASH_CONFIG, generateRules, generateClashRuleSets, getOutbounds, PREDE
 import { BaseConfigBuilder } from './BaseConfigBuilder.js';
 import { deepCopy, groupProxiesByCountry, buildCountryNameFilter } from '../utils.js';
 import { addProxyWithDedup } from './helpers/proxyHelpers.js';
-import { buildSelectorMembers, buildNodeSelectMembers, buildCustomRuleMembers, uniqueNames } from './helpers/groupBuilder.js';
+import { buildSelectorMembers, buildNodeSelectMembers, buildCustomRuleMembers, uniqueNames, applyGroupPreferredDefault } from './helpers/groupBuilder.js';
 import { emitClashRules, sanitizeClashProxyGroups } from './helpers/clashConfigUtils.js';
 import { normalizeGroupName, findGroupIndexByName } from './helpers/groupNameUtils.js';
+import { buildTemplateClashSections } from '../config/ruleTemplate.js';
 import { InvalidConfigError } from '../services/errors.js';
 
 /**
@@ -48,18 +49,21 @@ function getClashUdpValue(proxy, defaultEnabled = true) {
 }
 
 export class ClashConfigBuilder extends BaseConfigBuilder {
-    constructor(inputString, selectedRules, customRules, baseConfig, lang, userAgent, groupByCountry = false, enableClashUI = false, externalController, externalUiDownloadUrl, includeAutoSelect = true) {
+    constructor(inputString, selectedRules, customRules, baseConfig, lang, userAgent, groupByCountry = false, enableClashUI = false, externalController, externalUiDownloadUrl, includeAutoSelect = true, groupDefaults = {}, forceUdp = undefined, customRuleGroups = []) {
         if (!baseConfig) {
             baseConfig = CLASH_CONFIG;
         }
         super(inputString, baseConfig, lang, userAgent, groupByCountry, includeAutoSelect);
         this.selectedRules = selectedRules;
         this.customRules = customRules;
+        this.customRuleGroups = Array.isArray(customRuleGroups) ? customRuleGroups : [];
         this.countryGroupNames = [];
         this.manualGroupName = null;
         this.enableClashUI = enableClashUI;
         this.externalController = externalController;
         this.externalUiDownloadUrl = externalUiDownloadUrl;
+        this.groupDefaults = groupDefaults && typeof groupDefaults === 'object' ? groupDefaults : {};
+        this.forceUdp = typeof forceUdp === 'boolean' ? forceUdp : undefined;
     }
 
     /**
@@ -310,6 +314,10 @@ export class ClashConfigBuilder extends BaseConfigBuilder {
 
     addProxyToConfig(proxy) {
         this.config.proxies = this.config.proxies || [];
+        // A forced UDP value is an explicit user override, so it wins over per-node settings
+        if (typeof this.forceUdp === 'boolean' && proxy && typeof proxy === 'object') {
+            proxy = { ...proxy, udp: this.forceUdp };
+        }
         addProxyWithDedup(this.config.proxies, proxy, {
             getName: (item) => item?.name,
             setName: (item, name) => {
@@ -409,6 +417,7 @@ export class ClashConfigBuilder extends BaseConfigBuilder {
                     if (DIRECT_DEFAULT_RULES.has(outbound)) {
                         proxies = ['DIRECT', ...proxies.filter(p => p !== 'DIRECT')];
                     }
+                    proxies = applyGroupPreferredDefault(proxies, this.groupDefaults[outbound], this.t);
                     const group = {
                         type: "select",
                         name,
@@ -450,6 +459,48 @@ export class ClashConfigBuilder extends BaseConfigBuilder {
                 }
             });
         }
+    }
+
+    // Why: a rule target can reference a group that the selected rule set never
+    // declared, and mihomo rejects the whole config when a target is undefined.
+    ensureRuleOutboundGroups(rules, proxyList) {
+        if (!Array.isArray(rules) || rules.length === 0) return;
+        const outbounds = [...new Set(
+            rules
+                .map(rule => rule?.outbound)
+                .filter(outbound => typeof outbound === 'string' && outbound.trim())
+        )];
+        if (outbounds.length === 0) return;
+        this.addOutboundGroups(outbounds, proxyList);
+    }
+
+    ensureRuleTargetsHaveGroups(ruleResults, proxyList) {
+        if (!Array.isArray(ruleResults) || ruleResults.length === 0) return;
+        const requiredGroups = new Set();
+        ruleResults.forEach((ruleLine) => {
+            if (typeof ruleLine !== 'string') return;
+            const parts = ruleLine.split(',');
+            if (parts.length < 3) return;
+            const target = normalizeGroupName(parts[2]);
+            if (!target || target === 'DIRECT' || target === 'REJECT') return;
+            requiredGroups.add(target);
+        });
+
+        this.config['proxy-groups'] = this.config['proxy-groups'] || [];
+
+        requiredGroups.forEach((groupName) => {
+            if (this.hasProxyGroup(groupName)) return;
+            const group = {
+                type: 'select',
+                name: groupName,
+                proxies: this.buildSelectGroupMembers(proxyList)
+            };
+            const providerNames = this.getAllProviderNames();
+            if (providerNames.length > 0) {
+                group.use = providerNames;
+            }
+            this.config['proxy-groups'].push(group);
+        });
     }
 
     addFallBackGroup(proxyList) {
@@ -662,26 +713,59 @@ export class ClashConfigBuilder extends BaseConfigBuilder {
 
     // 生成规则
     generateRules() {
-        return generateRules(this.selectedRules, this.customRules);
+        return generateRules(this.selectedRules, this.customRules, this.customRuleGroups);
+    }
+
+    /**
+     * Append auto-synced proxy-providers. Why: both the rule-driven and the
+     * template-driven output need the same provider block.
+     */
+    applyProxyProviders() {
+        if (this.providerUrls.length === 0) return;
+        this.config['proxy-providers'] = {
+            ...this.config['proxy-providers'],
+            ...this.generateProxyProviders()
+        };
+    }
+
+    /**
+     * Enable Clash UI (external controller/dashboard) when requested or when custom UI params are provided
+     */
+    applyClashUiSettings() {
+        if (!this.enableClashUI && !this.externalController && !this.externalUiDownloadUrl) return;
+
+        const defaultController = '0.0.0.0:9090';
+        const defaultUiPath = './ui';
+        const defaultUiName = 'zashboard';
+        const defaultUiUrl = 'https://gh-proxy.com/https://github.com/Zephyruso/zashboard/archive/refs/heads/gh-pages.zip';
+        const defaultSecret = '';
+
+        const controller = this.externalController || this.config['external-controller'] || defaultController;
+        const uiPath = this.config['external-ui'] || defaultUiPath;
+        const uiName = this.config['external-ui-name'] || defaultUiName;
+        const uiUrl = this.externalUiDownloadUrl || this.config['external-ui-url'] || defaultUiUrl;
+        const secret = this.config['secret'] ?? defaultSecret;
+
+        this.config['external-controller'] = controller;
+        this.config['external-ui'] = uiPath;
+        this.config['external-ui-name'] = uiName;
+        this.config['external-ui-url'] = uiUrl;
+        this.config['secret'] = secret;
     }
 
     formatConfig() {
         const rules = this.generateRules();
+        this.ensureRuleOutboundGroups(rules, this.getProxyList());
         const useMrs = supportsMrsFormat(this.userAgent);
-        const { site_rule_providers, ip_rule_providers } = generateClashRuleSets(this.selectedRules, this.customRules, useMrs);
+        const { site_rule_providers, ip_rule_providers } = generateClashRuleSets(this.selectedRules, this.customRules, useMrs, this.customRuleGroups);
         this.config['rule-providers'] = {
             ...site_rule_providers,
             ...ip_rule_providers
         };
         const ruleResults = emitClashRules(rules, this.t);
+        this.ensureRuleTargetsHaveGroups(ruleResults, this.getProxyList());
 
-        // Add proxy-providers if we have any
-        if (this.providerUrls.length > 0) {
-            this.config['proxy-providers'] = {
-                ...this.config['proxy-providers'],
-                ...this.generateProxyProviders()
-            };
-        }
+        this.applyProxyProviders();
 
         sanitizeClashProxyGroups(this.config);
         this.validateProxyGroups();
@@ -691,26 +775,27 @@ export class ClashConfigBuilder extends BaseConfigBuilder {
             `MATCH,${this.t('outboundNames.Fall Back')}`
         ];
 
-        // Enable Clash UI (external controller/dashboard) when requested or when custom UI params are provided
-        if (this.enableClashUI || this.externalController || this.externalUiDownloadUrl) {
-            const defaultController = '0.0.0.0:9090';
-            const defaultUiPath = './ui';
-            const defaultUiName = 'zashboard';
-            const defaultUiUrl = 'https://gh-proxy.com/https://github.com/Zephyruso/zashboard/archive/refs/heads/gh-pages.zip';
-            const defaultSecret = '';
+        this.applyClashUiSettings();
 
-            const controller = this.externalController || this.config['external-controller'] || defaultController;
-            const uiPath = this.config['external-ui'] || defaultUiPath;
-            const uiName = this.config['external-ui-name'] || defaultUiName;
-            const uiUrl = this.externalUiDownloadUrl || this.config['external-ui-url'] || defaultUiUrl;
-            const secret = this.config['secret'] ?? defaultSecret;
+        return yaml.dump(this.config);
+    }
 
-            this.config['external-controller'] = controller;
-            this.config['external-ui'] = uiPath;
-            this.config['external-ui-name'] = uiName;
-            this.config['external-ui-url'] = uiUrl;
-            this.config['secret'] = secret;
-        }
+    /**
+     * Build the config from a user-supplied rule template instead of the built-in
+     * rule set: the template owns rule-providers, proxy-groups and rules wholesale.
+     */
+    formatTemplateConfig(template) {
+        const { ruleProviders, proxyGroups, rules } = buildTemplateClashSections(template, {
+            proxyNames: this.getProxyList(),
+            providerNames: this.getAllProviderNames()
+        });
+
+        this.config['rule-providers'] = ruleProviders;
+        this.config['proxy-groups'] = proxyGroups;
+        this.config.rules = rules;
+
+        this.applyProxyProviders();
+        this.applyClashUiSettings();
 
         return yaml.dump(this.config);
     }

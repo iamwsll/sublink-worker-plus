@@ -1,4 +1,27 @@
 export const formLogicFn = (t) => {
+    const GROUP_DEFAULTS_SAVE_DEBOUNCE_MS = 120;
+    // Keep this helper inlined instead of importing from utils so formLogicFn.toString()
+    // remains self-contained when injected into the browser runtime.
+    const normalizeCustomRuleGroups = (rawGroups = []) => {
+        if (!Array.isArray(rawGroups)) return [];
+        return rawGroups
+            .map(group => {
+                if (!group || typeof group !== 'object') return null;
+                const name = typeof group.name === 'string' ? group.name.trim() : '';
+                // Backward compatibility: older links used singular `url`, new format uses `urls`.
+                const urls = Array.isArray(group.urls)
+                    ? group.urls
+                    : (typeof group.url === 'string' ? [group.url] : []);
+                const normalizedUrls = urls
+                    .filter(url => typeof url === 'string')
+                    .map(url => url.trim())
+                    .filter(Boolean);
+                if (!name || normalizedUrls.length === 0) return null;
+                return { name, urls: normalizedUrls };
+            })
+            .filter(Boolean);
+    };
+
     window.formData = function () {
         // Inline parseSurgeConfigInput to make it available in toString()
         const parseSurgeValue = (rawValue = '') => {
@@ -85,6 +108,11 @@ export const formLogicFn = (t) => {
             subconverterCopied: false,
             groupByCountry: false,
             includeAutoSelect: true,
+            groupDefaults: {},
+            customRuleGroups: [],
+            clashRuleBase: '',
+            // Default off: UDP is only forced onto every proxy when the user opts in.
+            forceUdp: false,
             enableClashUI: false,
             externalController: '',
             externalUiDownloadUrl: '',
@@ -106,6 +134,7 @@ export const formLogicFn = (t) => {
             customShortCode: '',
             parsingUrl: false,
             parseDebounceTimer: null,
+            groupDefaultsSaveTimer: null,
             // These will be populated from window.APP_TRANSLATIONS
             processingText: '',
             convertText: '',
@@ -133,6 +162,31 @@ export const formLogicFn = (t) => {
                 this.groupByCountry = localStorage.getItem('groupByCountry') === 'true';
                 this.includeAutoSelect = localStorage.getItem('includeAutoSelect') !== 'false';
                 this.enableClashUI = localStorage.getItem('enableClashUI') === 'true';
+                this.forceUdp = localStorage.getItem('forceUdp') === 'true';
+                // Displaying a group's admin-defined default means seeding the override map: customRuleSets
+                // own per-group `defaultOption`, groupDefaults carries the rest. The server still
+                // applies its own defaults when nothing is sent.
+                this.groupDefaults = {};
+                (window.ADMIN_RULE_SETS || []).forEach(ruleSet => {
+                    const name = typeof ruleSet?.name === 'string' ? ruleSet.name.trim() : '';
+                    const option = typeof ruleSet?.defaultOption === 'string' ? ruleSet.defaultOption.trim() : '';
+                    if (name && option) this.groupDefaults[name] = option;
+                });
+                const adminDefaults = window.ADMIN_GROUP_DEFAULTS;
+                if (adminDefaults && typeof adminDefaults === 'object' && !Array.isArray(adminDefaults)) {
+                    Object.assign(this.groupDefaults, adminDefaults);
+                }
+                const savedGroupDefaults = localStorage.getItem('groupDefaults');
+                if (savedGroupDefaults) {
+                    try {
+                        const parsedDefaults = JSON.parse(savedGroupDefaults);
+                        if (parsedDefaults && typeof parsedDefaults === 'object' && !Array.isArray(parsedDefaults)) {
+                            this.groupDefaults = { ...this.groupDefaults, ...parsedDefaults };
+                        }
+                    } catch { }
+                }
+                this.customRuleGroups = [];
+                this.clashRuleBase = localStorage.getItem('clashRuleBase') || '';
                 this.externalController = localStorage.getItem('externalController') || '';
                 this.externalUiDownloadUrl = localStorage.getItem('externalUiDownloadUrl') || '';
                 this.customUA = localStorage.getItem('userAgent') || '';
@@ -164,6 +218,19 @@ export const formLogicFn = (t) => {
                 this.$watch('groupByCountry', val => localStorage.setItem('groupByCountry', val));
                 this.$watch('includeAutoSelect', val => localStorage.setItem('includeAutoSelect', val));
                 this.$watch('enableClashUI', val => localStorage.setItem('enableClashUI', val));
+                this.$watch('forceUdp', val => localStorage.setItem('forceUdp', val));
+                this.$watch('clashRuleBase', val => localStorage.setItem('clashRuleBase', val || ''));
+                // Deep changes fire on every keystroke, so the write is debounced to keep
+                // localStorage traffic proportional to edits rather than to characters.
+                this.$watch('groupDefaults', val => {
+                    if (this.groupDefaultsSaveTimer) {
+                        clearTimeout(this.groupDefaultsSaveTimer);
+                    }
+                    this.groupDefaultsSaveTimer = setTimeout(() => {
+                        localStorage.setItem('groupDefaults', JSON.stringify(val || {}));
+                    }, GROUP_DEFAULTS_SAVE_DEBOUNCE_MS);
+                }, { deep: true });
+                this.$watch('customRuleGroups', () => localStorage.removeItem('customRuleGroups'), { deep: true });
                 this.$watch('externalController', val => localStorage.setItem('externalController', val));
                 this.$watch('externalUiDownloadUrl', val => localStorage.setItem('externalUiDownloadUrl', val));
                 this.$watch('customUA', val => localStorage.setItem('userAgent', val));
@@ -190,6 +257,101 @@ export const formLogicFn = (t) => {
                 const rules = window.PREDEFINED_RULE_SETS;
                 if (rules && rules[this.selectedPredefinedRule]) {
                     this.selectedRules = rules[this.selectedPredefinedRule];
+                }
+            },
+
+            // Presets do not carry per-group defaults, so the effective default of a rule is resolved
+            // from the admin config at runtime; the UI shows it as the empty option's label.
+            getFollowBuiltInDefaultLabel(ruleName) {
+                const label = window.APP_TRANSLATIONS?.followBuiltInDefault || 'Follow built-in default';
+                const effective = this.getAdminRuleDefault(ruleName);
+                return effective ? label + ' (' + this.translateOutbound(effective) + ')' : label;
+            },
+
+            // Admin rule sets own a per-group defaultOption, admin groupDefaults owns the rest;
+            // together they are what the server falls back to when no override is sent.
+            getAdminRuleDefault(ruleName) {
+                if (!ruleName) return '';
+                const ruleSet = (window.ADMIN_RULE_SETS || []).find(set => set?.name === ruleName);
+                const option = typeof ruleSet?.defaultOption === 'string' ? ruleSet.defaultOption.trim() : '';
+                if (option) return option;
+                const adminDefaults = window.ADMIN_GROUP_DEFAULTS;
+                const groupOption = adminDefaults && typeof adminDefaults === 'object' ? adminDefaults[ruleName] : undefined;
+                return typeof groupOption === 'string' ? groupOption.trim() : '';
+            },
+
+            translateOutbound(name) {
+                // Admin groups reuse the same outbound keys as built-in rules, so an unknown
+                // name must fall back to itself rather than render "undefined".
+                return window.APP_TRANSLATIONS?.outboundNames?.[name] || name;
+            },
+
+            getCustomRuleGroupsForPayload() {
+                return normalizeCustomRuleGroups(this.customRuleGroups);
+            },
+
+            // Only rules that are actually selected produce a group, and an empty option means
+            // "follow the built-in default", so neither belongs in the query. Filtering here
+            // (instead of deleting keys) keeps admin-seeded defaults if the rule is re-selected.
+            getGroupDefaultsForPayload() {
+                const selected = new Set(this.selectedRules || []);
+                const result = {};
+                Object.entries(this.groupDefaults || {}).forEach(([ruleName, option]) => {
+                    if (!selected.has(ruleName)) return;
+                    if (typeof option !== 'string' || !option.trim()) return;
+                    result[ruleName] = option.trim();
+                });
+                return result;
+            },
+
+            addCustomRuleGroup() {
+                this.customRuleGroups.push({ name: '', urls: [''] });
+            },
+
+            removeCustomRuleGroup(index) {
+                if (index < 0 || index >= this.customRuleGroups.length) return;
+                const removed = this.customRuleGroups[index];
+                this.customRuleGroups.splice(index, 1);
+                if (removed?.name) {
+                    this.selectedRules = (this.selectedRules || []).filter(name => name !== removed.name);
+                    delete this.groupDefaults[removed.name];
+                }
+            },
+
+            addRuleSetUrl(group) {
+                if (!group) return;
+                if (!Array.isArray(group.urls)) group.urls = [];
+                group.urls.push('');
+            },
+
+            removeRuleSetUrl(group, urlIndex) {
+                if (!group || !Array.isArray(group.urls)) return;
+                if (urlIndex < 0 || urlIndex >= group.urls.length) return;
+                group.urls.splice(urlIndex, 1);
+                if (group.urls.length === 0) {
+                    group.urls.push('');
+                }
+            },
+
+            // Shared by /subconverter, the per-client links and the shorten flow so every
+            // generated URL carries the same customisation.
+            appendCustomizationParams(params) {
+                const customRuleGroups = this.getCustomRuleGroupsForPayload();
+                if (customRuleGroups.length > 0) {
+                    params.append('customRuleGroups', JSON.stringify(customRuleGroups));
+                }
+
+                const groupDefaults = this.getGroupDefaultsForPayload();
+                if (Object.keys(groupDefaults).length > 0) {
+                    params.append('group_defaults', JSON.stringify(groupDefaults));
+                }
+
+                if (this.forceUdp) {
+                    params.append('udp', 'true');
+                }
+
+                if (this.clashRuleBase && this.clashRuleBase.trim()) {
+                    params.append('clash_rule_base', this.clashRuleBase.trim());
                 }
             },
 
@@ -220,6 +382,8 @@ export const formLogicFn = (t) => {
                 if (this.groupByCountry) {
                     params.append('group_by_country', 'true');
                 }
+
+                this.appendCustomizationParams(params);
 
                 // Include lang parameter so subconverter gets correct group names
                 const appLang = window.APP_LANG || 'zh-CN';
@@ -383,6 +547,8 @@ export const formLogicFn = (t) => {
                     if (this.enableClashUI) params.append('enable_clash_ui', 'true');
                     if (this.externalController) params.append('external_controller', this.externalController);
                     if (this.externalUiDownloadUrl) params.append('external_ui_download_url', this.externalUiDownloadUrl);
+
+                    this.appendCustomizationParams(params);
 
                     // Add configId if present in URL
                     const urlParams = new URLSearchParams(window.location.search);
@@ -624,6 +790,39 @@ export const formLogicFn = (t) => {
                 this.includeAutoSelect = params.get('include_auto_select') !== 'false';
                 this.enableClashUI = params.get('enable_clash_ui') === 'true';
 
+                // Links always carry udp only when it is forced, so an absent param means "off".
+                const hasUdpParam = params.has('udp');
+                this.forceUdp = params.get('udp') === 'true';
+
+                const clashRuleBase = params.get('clash_rule_base');
+                if (clashRuleBase) {
+                    this.clashRuleBase = clashRuleBase;
+                }
+
+                const customRuleGroups = params.get('customRuleGroups');
+                if (customRuleGroups) {
+                    try {
+                        const parsed = JSON.parse(customRuleGroups);
+                        if (Array.isArray(parsed)) {
+                            this.customRuleGroups = normalizeCustomRuleGroups(parsed);
+                        }
+                    } catch (e) {
+                        console.warn('Failed to parse customRuleGroups:', e);
+                    }
+                }
+
+                const groupDefaults = params.get('group_defaults');
+                if (groupDefaults) {
+                    try {
+                        const parsed = JSON.parse(groupDefaults);
+                        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+                            this.groupDefaults = parsed;
+                        }
+                    } catch (e) {
+                        console.warn('Failed to parse group_defaults:', e);
+                    }
+                }
+
                 const externalController = params.get('external_controller');
                 if (externalController) {
                     this.externalController = externalController;
@@ -646,8 +845,8 @@ export const formLogicFn = (t) => {
                 }
 
                 // Expand advanced options if any advanced settings are present
-                if (selectedRules || customRules || this.groupByCountry || this.enableClashUI ||
-                    externalController || externalUiDownloadUrl || ua || configId) {
+                if (selectedRules || customRules || customRuleGroups || this.groupByCountry || this.enableClashUI ||
+                    hasUdpParam || clashRuleBase || groupDefaults || externalController || externalUiDownloadUrl || ua || configId) {
                     this.showAdvanced = true;
                 }
             }

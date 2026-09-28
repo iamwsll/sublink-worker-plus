@@ -1,8 +1,13 @@
 /** @jsxRuntime automatic */
 /** @jsxImportSource hono/jsx */
 import { APP_NAME, GITHUB_REPO, DOCS_URL } from '../constants.js';
+import { translations } from '../i18n/index.js';
 
-export const Navbar = () => {
+export const Navbar = (props) => {
+    // The navbar can be rendered from call sites that have no translator yet, so it accepts
+    // `t` and otherwise resolves the key from the language packs directly.
+    const lang = props?.lang || 'zh-CN';
+    const t = props?.t || ((key) => translations[lang]?.[key] ?? translations['zh-CN'][key] ?? key);
     return (
         <nav class="fixed top-0 w-full bg-white/80 dark:bg-gray-900/80 backdrop-blur-md shadow-sm border-b border-gray-200 dark:border-gray-800 z-50 transition-all duration-300">
             <div class="container mx-auto px-4">
@@ -12,6 +17,13 @@ export const Navbar = () => {
                         <span>{APP_NAME}</span>
                     </a>
                     <div class="flex items-center gap-3">
+                        <a
+                            href="/admin"
+                            class="px-4 py-2 text-gray-700 dark:text-gray-300 text-sm font-medium rounded-full hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors flex items-center gap-2"
+                        >
+                            <i class="fas fa-gear"></i>
+                            <span>{t('adminEntry')}</span>
+                        </a>
                         <a
                             href={DOCS_URL}
                             target="_blank"
