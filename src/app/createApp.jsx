@@ -173,7 +173,8 @@ export function createApp(bindings = {}) {
             const externalController = c.req.query('external_controller');
             const externalUiDownloadUrl = c.req.query('external_ui_download_url');
             const configId = c.req.query('configId');
-            const forceUdp = parseBool(c.req.query('udp'), undefined);
+            // UDP defaults to on for every proxy; udp=false is the explicit opt-out.
+            const forceUdp = parseBool(c.req.query('udp'), true);
             const lang = c.get('lang');
 
             const clashRuleBase = c.req.query('clash_rule_base') || c.req.query('clashRuleBase');

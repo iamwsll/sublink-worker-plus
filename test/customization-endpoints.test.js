@@ -312,18 +312,18 @@ describe('/clash udp flag', () => {
         expect(udpOf(parseClash(await res.text()))).toBe(false);
     });
 
-    it('keeps the node value when udp is absent', async () => {
+    it('defaults to udp=true when udp is absent', async () => {
         const app = createTestApp();
         const res = await app.request(url('/clash', { config: VLESS_UDP_OFF }));
 
-        expect(udpOf(parseClash(await res.text()))).toBe(false);
+        expect(udpOf(parseClash(await res.text()))).toBe(true);
     });
 
-    it('ignores an unparseable udp value', async () => {
+    it('falls back to the udp=true default for an unparseable value', async () => {
         const app = createTestApp();
         const res = await app.request(url('/clash', { config: VLESS_UDP_OFF, udp: 'maybe' }));
 
-        expect(udpOf(parseClash(await res.text()))).toBe(false);
+        expect(udpOf(parseClash(await res.text()))).toBe(true);
     });
 });
 

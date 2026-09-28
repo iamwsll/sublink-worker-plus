@@ -114,8 +114,8 @@ export const formLogicFn = (t) => {
             groupDefaults: {},
             customRuleGroups: [],
             clashRuleBase: '',
-            // Default off: UDP is only forced onto every proxy when the user opts in.
-            forceUdp: false,
+            // Default on: the server forces udp=true unless the link says otherwise.
+            forceUdp: true,
             enableClashUI: false,
             externalController: '',
             externalUiDownloadUrl: '',
@@ -165,7 +165,7 @@ export const formLogicFn = (t) => {
                 this.groupByCountry = localStorage.getItem('groupByCountry') === 'true';
                 this.includeAutoSelect = localStorage.getItem('includeAutoSelect') !== 'false';
                 this.enableClashUI = localStorage.getItem('enableClashUI') === 'true';
-                this.forceUdp = localStorage.getItem('forceUdp') === 'true';
+                this.forceUdp = localStorage.getItem('forceUdp') !== 'false';
                 // Displaying a group's admin-defined default means seeding the override map: customRuleSets
                 // own per-group `defaultOption`, groupDefaults carries the rest. The server still
                 // applies its own defaults when nothing is sent.
@@ -356,9 +356,9 @@ export const formLogicFn = (t) => {
                     params.append('group_defaults', JSON.stringify(groupDefaults));
                 }
 
-                if (this.forceUdp) {
-                    params.append('udp', 'true');
-                }
+                // Always explicit: the server defaults to udp=true, so an unchecked toggle
+                // must send udp=false instead of just omitting the flag.
+                params.append('udp', this.forceUdp ? 'true' : 'false');
 
                 if (this.clashRuleBase && this.clashRuleBase.trim()) {
                     params.append('clash_rule_base', this.clashRuleBase.trim());
@@ -806,9 +806,9 @@ export const formLogicFn = (t) => {
                 this.includeAutoSelect = params.get('include_auto_select') !== 'false';
                 this.enableClashUI = params.get('enable_clash_ui') === 'true';
 
-                // Links always carry udp only when it is forced, so an absent param means "off".
+                // Links carry udp explicitly, but an absent param maps to the server default (on).
                 const hasUdpParam = params.has('udp');
-                this.forceUdp = params.get('udp') === 'true';
+                this.forceUdp = hasUdpParam ? params.get('udp') === 'true' : true;
 
                 const clashRuleBase = params.get('clash_rule_base');
                 if (clashRuleBase) {

@@ -106,7 +106,7 @@ All parameters compose with the existing query API and can be persisted through 
 |---|---|---|
 | `customRuleGroups` | /singbox /clash /surge /subconverter | JSON array `[{name, urls: []}]`; creates rule groups backed by remote rule lists, or overrides same-named built-ins |
 | `group_defaults` | all builder endpoints | JSON object `{groupName: option}` moving the preferred option to the front of a selector |
-| `udp` | /clash | `true`/`false` forces the udp flag on every proxy |
+| `udp` | /clash | `true`/`false` forces the udp flag on every proxy (default: `true`) |
 | `clash_rule_base` | /clash | Remote Clash YAML as base config (cached in KV/memory) |
 | `clash_rule_base_ttl` | /clash | Cache seconds for the remote base (0 disables, max 86400) |
 | `clash_rule_base_refresh` | /clash | `true` bypasses the cache once |
