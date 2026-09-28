@@ -179,10 +179,7 @@ describe('normalizeAdminConfig', () => {
                     enabled: 'yes',
                     isDefault: true,
                     clashRuleBase: 'https://clash.test/base.yml',
-                    quanxRuleBase: 'ftp://quanx.test/base.conf',
-                    omittedGroups: ['  Gone  ', 42, '', null, 'Gone Too'],
-                    subconverterLines: ['ruleset=A,https://a.test/x.list', '  ', 42, '', 'a\nb', 'ruleset=B,https://b.test/y.list'],
-                    fallbackClashConfig: { mode: 'rule' }
+                    subconverterLines: ['ruleset=A,https://a.test/x.list', '  ', 42, '', 'a\nb', 'ruleset=B,https://b.test/y.list']
                 }]
             });
 
@@ -192,11 +189,7 @@ describe('normalizeAdminConfig', () => {
                 enabled: true,
                 isDefault: true,
                 clashRuleBase: 'https://clash.test/base.yml',
-                // quanxRuleBase rejects non-http(s) exactly like clashRuleBase
-                quanxRuleBase: '',
-                omittedGroups: ['Gone', 'Gone Too'],
-                subconverterLines: ['ruleset=A,https://a.test/x.list', 'ruleset=B,https://b.test/y.list'],
-                fallbackClashConfig: { mode: 'rule' }
+                subconverterLines: ['ruleset=A,https://a.test/x.list', 'ruleset=B,https://b.test/y.list']
             });
         });
 
@@ -222,27 +215,6 @@ describe('normalizeAdminConfig', () => {
 
             expect(config.templates[0].subconverterLines).toEqual(['ruleset=A,https://a.test/x.list']);
             expect(config.templates[0].subconverterLines.join('\n')).not.toContain('Evil');
-        });
-
-        it('nulls a non-object fallbackClashConfig and deep-clones a valid one', () => {
-            expect(normalizeAdminConfig({ templates: [{ id: 't1', fallbackClashConfig: 'nope' }] }).templates[0].fallbackClashConfig).toBeNull();
-            expect(normalizeAdminConfig({ templates: [{ id: 't2', fallbackClashConfig: [1, 2] }] }).templates[0].fallbackClashConfig).toBeNull();
-            expect(normalizeAdminConfig({ templates: [{ id: 't3', fallbackClashConfig: undefined }] }).templates[0].fallbackClashConfig).toBeNull();
-
-            const source = { mode: 'rule', nested: { port: 7890 } };
-            const normalized = normalizeAdminConfig({ templates: [{ id: 't4', fallbackClashConfig: source }] });
-            expect(normalized.templates[0].fallbackClashConfig).toEqual(source);
-            expect(normalized.templates[0].fallbackClashConfig).not.toBe(source);
-
-            source.nested.port = 1;
-            expect(normalized.templates[0].fallbackClashConfig.nested.port).toBe(7890);
-        });
-
-        it('returns null for an unserializable fallbackClashConfig', () => {
-            const cyclic = { mode: 'rule' };
-            cyclic.self = cyclic;
-
-            expect(normalizeAdminConfig({ templates: [{ id: 'cyclic', fallbackClashConfig: cyclic }] }).templates[0].fallbackClashConfig).toBeNull();
         });
 
         it('returns an empty list for non-arrays', () => {

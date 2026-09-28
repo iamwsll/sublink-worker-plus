@@ -196,34 +196,14 @@ describe('resolveClashRuleBaseConfig', () => {
         expect(fetchMock).toHaveBeenCalledTimes(3);
     });
 
-    it('returns fallbackConfig and warns when the fetch fails', async () => {
-        stubFetchText('', { ok: false, status: 500 });
-        const kv = new MemoryKVAdapter();
-        const logger = { warn: vi.fn() };
-        const fallbackConfig = { mode: 'fallback' };
-
-        const result = await resolveClashRuleBaseConfig({
-            url: 'https://kv-fallback.test/a.yml',
-            kv,
-            fallbackConfig,
-            logger
-        });
-
-        expect(result).toBe(fallbackConfig);
-        expect(logger.warn).toHaveBeenCalledTimes(1);
-        expect(logger.warn.mock.calls[0][0]).toContain('embedded fallback');
-        // A failed fetch must not poison the cache.
-        expect(kv.store.size).toBe(0);
-    });
-
-    it('rethrows when the fetch fails and no fallback is configured', async () => {
+    it('rethrows when the fetch fails', async () => {
         stubFetchText('', { ok: false, status: 503 });
         await expect(resolveClashRuleBaseConfig({ url: 'https://kv-nofallback.test/a.yml', kv: new MemoryKVAdapter() }))
             .rejects.toBeInstanceOf(InvalidConfigError);
     });
 
-    it('still returns the fallback when KV reads and writes explode', async () => {
-        stubFetchText('', { ok: false, status: 500 });
+    it('still serves the fetched config when KV reads and writes explode', async () => {
+        stubFetchText('mode: rule\n');
         const explodingKv = {
             get: async () => { throw new Error('kv read down'); },
             put: async () => { throw new Error('kv write down'); }
@@ -233,12 +213,11 @@ describe('resolveClashRuleBaseConfig', () => {
         const result = await resolveClashRuleBaseConfig({
             url: 'https://kv-broken.test/a.yml',
             kv: explodingKv,
-            fallbackConfig: { mode: 'fallback' },
             logger
         });
 
-        expect(result).toEqual({ mode: 'fallback' });
-        // One warn for the read failure, one for the fallback message.
+        expect(result).toEqual({ mode: 'rule' });
+        // One warn for the read failure, one for the write failure.
         expect(logger.warn).toHaveBeenCalledTimes(2);
     });
 

@@ -87,16 +87,16 @@ Set the `ADMIN_PASSWORD` environment variable and open `/admin` — a unified we
 | General | Default rule preset used when a request carries no `selectedRules` |
 | Custom rule sets | Server-side rule groups (`name` + rule-list URLs + optional default option). They appear as extra options on the home page and can be referenced by `selectedRules` |
 | Group defaults | Preferred default option per policy group (e.g. `Bilibili → DIRECT`) |
-| Rule templates | subconverter INI lines (`ruleset=` / `custom_proxy_group=`) that fully own the Clash rules/proxy-groups/rules output, plus the template's own Clash/Quantumult X base config URL; one template can be marked as default |
+| Rule templates | subconverter INI lines (`ruleset=` / `custom_proxy_group=`) that fully own the Clash rules/proxy-groups/rules output, plus the template's own Clash base config URL; one template can be marked as default |
 
 ### Rule Templates
 
-A template is a named, toggleable bundle of subconverter external-config lines. When a template applies, `/clash` output is built from the template's ruleset and group definitions instead of the built-in rule engine, and `/subconverter` emits the template's INI verbatim (with `clash_rule_base` / `quanx_rule_base` appended).
+A template is a named, toggleable bundle of subconverter external-config lines. When a template applies, `/clash` output is built from the template's ruleset and group definitions instead of the built-in rule engine, and `/subconverter` emits the template's INI verbatim (with `clash_rule_base` appended).
 
 - **Default template** applies to bare requests; an explicit `template=<id>` query parameter forces one
 - Any per-request customization (`selectedRules`, `customRules`, `customRuleGroups`, `clash_rule_base`, `configId`) opts out of the default template
-- `omittedGroups` drops named groups (and references to them) from the compiled output
-- `fallbackClashConfig` is an optional embedded Clash config used when the template's `clashRuleBase` URL can't be fetched
+- On the home page the template's groups and rules are listed, and individual rules can be opted out per request via `template_excluded_rules`
+- A group whose regex matches none of the subscription's nodes is dropped (with references to it stripped), and a template without `clashRuleBase` uses the built-in default base config
 
 ## 🔌 API Extensions
 
@@ -106,6 +106,7 @@ All parameters compose with the existing query API and can be persisted through 
 |---|---|---|
 | `customRuleGroups` | /singbox /clash /surge /subconverter | JSON array `[{name, urls: []}]`; creates rule groups backed by remote rule lists, or overrides same-named built-ins |
 | `group_defaults` | all builder endpoints | JSON object `{groupName: option}` moving the preferred option to the front of a selector |
+| `template_excluded_rules` | /clash /subconverter | JSON array of template rule ids (`Group::Label`, as listed on the home page) to drop from the applied template |
 | `udp` | /clash | `true`/`false` forces the udp flag on every proxy (default: `true`) |
 | `clash_rule_base` | /clash | Remote Clash YAML as base config (cached in KV/memory) |
 | `clash_rule_base_ttl` | /clash | Cache seconds for the remote base (0 disables, max 86400) |

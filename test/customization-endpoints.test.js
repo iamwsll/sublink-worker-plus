@@ -20,8 +20,6 @@ const MINI_TEMPLATE = {
     enabled: true,
     isDefault: false,
     clashRuleBase: '',
-    quanxRuleBase: 'https://mini.test/quanx.conf',
-    omittedGroups: [],
     subconverterLines: [
         'ruleset=Proxy,https://mini.test/lists/Google.list',
         'ruleset=Direct,[]GEOIP,CN',
@@ -31,8 +29,7 @@ const MINI_TEMPLATE = {
         'custom_proxy_group=Proxy`select`[]Manual`[]DIRECT',
         'custom_proxy_group=Direct`select`[]DIRECT',
         'custom_proxy_group=Final`select`[]Proxy`[]DIRECT'
-    ],
-    fallbackClashConfig: { mode: 'rule', 'mixed-port': 7890 }
+    ]
 };
 
 const createTestApp = (overrides = {}) => createApp({
@@ -509,11 +506,10 @@ describe('/clash templates', () => {
 
     it('uses the template clashRuleBase as the base config', async () => {
         const baseUrl = uniqueBaseUrl('template-base');
-        const fallback = 'mode: rule\nmixed-port: 1111\n';
         const fetchMock = stubFetchYaml('mode: global\nmixed-port: 2222\n');
         const kv = new MemoryKVAdapter();
         await seedAdminConfig(kv, {
-            templates: [{ ...MINI_TEMPLATE, enabled: true, isDefault: true, clashRuleBase: baseUrl, fallbackClashConfig: yaml.load(fallback) }]
+            templates: [{ ...MINI_TEMPLATE, enabled: true, isDefault: true, clashRuleBase: baseUrl }]
         });
         const app = createTestApp({ kv });
 
@@ -526,7 +522,7 @@ describe('/clash templates', () => {
         expect(config.rules.at(-1)).toBe('MATCH,Final');
     });
 
-    it('uses the embedded fallback config when the template has no base URL', async () => {
+    it('uses the built-in default base when the template has no base URL', async () => {
         const fetchMock = stubFetchYaml('mode: global\n');
         const kv = new MemoryKVAdapter();
         await seedAdminConfig(kv, { templates: [{ ...MINI_TEMPLATE, enabled: true, isDefault: true }] });
@@ -535,8 +531,9 @@ describe('/clash templates', () => {
         const config = parseClash(await (await app.request(url('/clash', { config: SS_NODES }))).text());
 
         expect(fetchMock).not.toHaveBeenCalled();
-        expect(config['mixed-port']).toBe(7890);
-        expect(config.mode).toBe('rule');
+        // socks-port only exists in the built-in base config.
+        expect(config['socks-port']).toBe(7891);
+        expect(config.rules.at(-1)).toBe('MATCH,Final');
     });
 
     it('lets an explicit clash_rule_base replace the template base while keeping its rules', async () => {
@@ -694,14 +691,13 @@ describe('/subconverter customization', () => {
         const text = await res.text();
         expect(text).toContain('ruleset=Proxy,https://mini.test/lists/Google.list');
         expect(text).toContain('clash_rule_base=https://mini.test/clash.yml');
-        expect(text).toContain('quanx_rule_base=https://mini.test/quanx.conf');
         expect(text).toContain('custom_proxy_group=Manual`select`.*');
         expect(text).toContain(';luck');
         // Template output replaces the preset output entirely.
         expect(text).not.toContain('enable_rule_generator=true');
     });
 
-    it('lets template base URLs be overridden by query parameters', async () => {
+    it('lets the template base URL be overridden by a query parameter', async () => {
         const kv = new MemoryKVAdapter();
         await seedAdminConfig(kv, {
             templates: [{ ...MINI_TEMPLATE, enabled: true, isDefault: true, clashRuleBase: 'https://mini.test/clash.yml' }]
@@ -709,13 +705,11 @@ describe('/subconverter customization', () => {
         const app = createTestApp({ kv });
 
         const res = await app.request(url('/subconverter', {
-            clash_rule_base: 'https://override.test/clash.yml',
-            quanx_rule_base: 'https://override.test/quanx.conf'
+            clash_rule_base: 'https://override.test/clash.yml'
         }));
 
         const text = await res.text();
         expect(text).toContain('clash_rule_base=https://override.test/clash.yml');
-        expect(text).toContain('quanx_rule_base=https://override.test/quanx.conf');
         expect(text).not.toContain('mini.test/clash.yml');
     });
 

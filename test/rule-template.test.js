@@ -8,8 +8,6 @@ const MINI_TEMPLATE = {
     id: 'mini',
     name: 'Mini',
     clashRuleBase: 'https://mini.test/clash.yml',
-    quanxRuleBase: 'https://mini.test/quanx.conf',
-    omittedGroups: ['Gone'],
     subconverterLines: [
         'ruleset=Proxy,https://mini.test/lists/Google.list',
         'ruleset=Proxy,https://mini.test/lists/OpenAi.list',
@@ -22,7 +20,6 @@ const MINI_TEMPLATE = {
         'custom_proxy_group=Proxy`select`[]Manual`[]DIRECT',
         'custom_proxy_group=Direct`select`[]DIRECT',
         'custom_proxy_group=Final`select`[]Proxy`[]DIRECT',
-        'custom_proxy_group=Gone`select`.*',
         'custom_proxy_group=Empty`select`'
     ]
 };
@@ -32,7 +29,6 @@ const MINI_TEMPLATE = {
 const COMPLEX_TEMPLATE = {
     id: 'complex',
     name: 'Complex',
-    omittedGroups: ['🇭🇰 香港节点', '🎥 奈飞节点'],
     subconverterLines: [
         '[custom]',
         'ruleset=🎯 全球直连,https://fixture.test/lists/Lan.list',
@@ -149,14 +145,13 @@ describe('buildTemplateClashSections', () => {
             expect(auto.use).toBeUndefined();
         });
 
-        it('drops omitted groups and the references pointing at them', () => {
+        it('keeps only the groups that end up with members', () => {
+            // 'Empty' has no members at all and is dropped; everything else survives.
             expect(sections.proxyGroups.map(group => group.name))
                 .toEqual(['Auto', 'Manual', 'Pick', 'Proxy', 'Direct', 'Final']);
 
             const pick = sections.proxyGroups.find(group => group.name === 'Pick');
             expect(pick.proxies).toEqual(['Manual', 'DIRECT']);
-            // 'Gone' is not referenced anywhere as a member.
-            expect(sections.proxyGroups.flatMap(group => group.proxies)).not.toContain('Gone');
         });
 
         it('drops a select group that has neither members nor providers', () => {
@@ -246,23 +241,11 @@ describe('buildTemplateClashSections', () => {
             expect(sections.rules.filter(rule => rule.startsWith('MATCH,'))).toHaveLength(1);
         });
 
-        it('strips every omitted group from the proxy groups', () => {
-            const groupNames = sections.proxyGroups.map(group => group.name);
-
-            for (const omitted of COMPLEX_TEMPLATE.omittedGroups) {
-                expect(groupNames).not.toContain(omitted);
-            }
-        });
-
-        it('strips references to omitted groups from remaining members', () => {
+        it('keeps group references intact when the referenced group survives', () => {
             const nodeSelect = sections.proxyGroups.find(group => group.name === '🚀 节点选择');
 
             expect(nodeSelect).toBeDefined();
-            expect(nodeSelect.proxies).toEqual(['🚀 手动切换', '♻️ 自动选择', 'DIRECT']);
-            for (const omitted of COMPLEX_TEMPLATE.omittedGroups) {
-                expect(nodeSelect.proxies).not.toContain(omitted);
-            }
-            expect(sections.proxyGroups.flatMap(group => group.proxies)).not.toContain('🇭🇰 香港节点');
+            expect(nodeSelect.proxies).toEqual(['🚀 手动切换', '🇭🇰 香港节点', '♻️ 自动选择', 'DIRECT']);
         });
 
         it('keeps every rule pointing at an existing proxy group or provider', () => {
@@ -349,11 +332,13 @@ describe('buildTemplateClashSections', () => {
                 .toEqual(['🎯 全球直连', 'DIRECT']);
         });
 
-        it('drops the omitted country groups from the output', () => {
+        it('drops only country groups whose pattern matches nothing', () => {
             const groupNames = buildTemplateClashSections(COMPLEX_TEMPLATE, { proxyNames: ['Hong Kong 01'] })
                 .proxyGroups.map(group => group.name);
 
-            expect(groupNames).not.toContain('🇭🇰 香港节点');
+            // Hong Kong 01 matches the 香港 pattern, so that group survives; nothing
+            // matches 奈飞, so that one is dropped.
+            expect(groupNames).toContain('🇭🇰 香港节点');
             expect(groupNames).not.toContain('🎥 奈飞节点');
         });
 
@@ -368,26 +353,22 @@ describe('buildTemplateClashSections', () => {
 });
 
 describe('generateTemplateSubconverterConfig', () => {
-    it('emits the template lines plus both rule base keys', () => {
+    it('emits the template lines plus the clash rule base key', () => {
         const ini = generateTemplateSubconverterConfig(MINI_TEMPLATE, {});
         const lines = ini.split('\n');
 
         expect(lines.slice(0, MINI_TEMPLATE.subconverterLines.length)).toEqual(MINI_TEMPLATE.subconverterLines);
         expect(lines).toContain('clash_rule_base=https://mini.test/clash.yml');
-        expect(lines).toContain('quanx_rule_base=https://mini.test/quanx.conf');
         expect(lines.at(-1)).toBe(';luck');
     });
 
     it('lets explicit arguments override the template values', () => {
         const ini = generateTemplateSubconverterConfig(MINI_TEMPLATE, {
-            clashRuleBase: 'https://override.test/clash.yml',
-            quanxRuleBase: 'https://override.test/quanx.conf'
+            clashRuleBase: 'https://override.test/clash.yml'
         });
 
         expect(ini).toContain('clash_rule_base=https://override.test/clash.yml');
-        expect(ini).toContain('quanx_rule_base=https://override.test/quanx.conf');
         expect(ini).not.toContain('https://mini.test/clash.yml');
-        expect(ini).not.toContain('https://mini.test/quanx.conf');
     });
 
     it('falls back to the template value for blank or non-string overrides', () => {
@@ -401,29 +382,26 @@ describe('generateTemplateSubconverterConfig', () => {
 
     it('rejects newline-bearing overrides so they cannot inject INI keys', () => {
         const ini = generateTemplateSubconverterConfig(MINI_TEMPLATE, {
-            clashRuleBase: 'https://a.test/x.yml\nX-Injected: 1',
-            quanxRuleBase: 'https://a.test/x.conf\r\nX-Injected2: 1'
+            clashRuleBase: 'https://a.test/x.yml\nX-Injected: 1'
         });
 
         expect(ini).not.toContain('X-Injected');
         expect(ini).toContain('clash_rule_base=https://mini.test/clash.yml');
-        expect(ini).toContain('quanx_rule_base=https://mini.test/quanx.conf');
     });
 
-    it('keeps both keys present but empty when no base URL exists anywhere', () => {
+    it('keeps the key present but empty when no base URL exists anywhere', () => {
         const ini = generateTemplateSubconverterConfig({ subconverterLines: ['ruleset=A,https://a.test/x.list'] }, {});
         const lines = ini.split('\n');
 
         expect(lines).toEqual([
             'ruleset=A,https://a.test/x.list',
             'clash_rule_base=',
-            'quanx_rule_base=',
             ';luck'
         ]);
     });
 
-    it('returns just the base keys for a missing or malformed template', () => {
-        const expected = 'clash_rule_base=\nquanx_rule_base=\n;luck';
+    it('returns just the base key for a missing or malformed template', () => {
+        const expected = 'clash_rule_base=\n;luck';
 
         expect(generateTemplateSubconverterConfig(null, {})).toBe(expected);
         expect(generateTemplateSubconverterConfig(undefined)).toBe(expected);
@@ -441,7 +419,6 @@ describe('generateTemplateSubconverterConfig', () => {
             'ruleset=A,https://a.test/x.list',
             'enable_rule_generator=true',
             'clash_rule_base=',
-            'quanx_rule_base=',
             ';luck'
         ]);
     });
@@ -453,7 +430,6 @@ describe('generateTemplateSubconverterConfig', () => {
         expect(lines[0]).toBe('[custom]');
         expect(ini).toContain('ruleset=🎯 全球直连,https://fixture.test/lists/Lan.list');
         expect(lines.filter(line => line.startsWith('clash_rule_base='))).toHaveLength(1);
-        expect(lines.filter(line => line.startsWith('quanx_rule_base='))).toHaveLength(1);
         expect(lines.at(-1)).toBe(';luck');
     });
 });
@@ -461,7 +437,7 @@ describe('summarizeTemplate', () => {
     it('lists defined groups and rules without any proxy names', () => {
         const summary = summarizeTemplate(MINI_TEMPLATE);
 
-        // The omitted group never appears; malformed member-less groups still list.
+        // Member-less groups still list: dropping happens at compile time, not here.
         const names = summary.groups.map(group => group.name);
         expect(names).toEqual(['Auto', 'Manual', 'Pick', 'Proxy', 'Direct', 'Final', 'Empty']);
         expect(summary.groups.find(group => group.name === 'Auto')).toMatchObject({
@@ -529,7 +505,7 @@ describe('excludeTemplateRules', () => {
 
 describe('validateTemplateLines', () => {
     it('accepts a self-consistent template', () => {
-        expect(validateTemplateLines(COMPLEX_TEMPLATE.subconverterLines, COMPLEX_TEMPLATE.omittedGroups)).toEqual([]);
+        expect(validateTemplateLines(COMPLEX_TEMPLATE.subconverterLines)).toEqual([]);
     });
 
     it('flags a ruleset target with no matching group definition', () => {
@@ -560,13 +536,12 @@ describe('validateTemplateLines', () => {
         expect(issues[1]).toContain('empty target group');
     });
 
-    it('allows built-in targets and omitted groups', () => {
+    it('allows built-in targets', () => {
         const issues = validateTemplateLines([
             'ruleset=DIRECT,[]GEOIP,CN',
             'ruleset=REJECT,https://a.test/ads.list',
-            'ruleset=Gone,https://a.test/g.list',
-            'custom_proxy_group=Final`select`[]DIRECT`[]Gone'
-        ], ['Gone']);
+            'custom_proxy_group=Final`select`[]DIRECT'
+        ]);
 
         expect(issues).toEqual([]);
     });

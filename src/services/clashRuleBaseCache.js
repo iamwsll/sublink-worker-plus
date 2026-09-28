@@ -20,7 +20,6 @@ export async function resolveClashRuleBaseConfig({
     kv,
     cacheTtlSeconds = DEFAULT_CLASH_RULE_BASE_CACHE_TTL_SECONDS,
     refresh = false,
-    fallbackConfig,
     logger
 } = {}) {
     const normalizedUrl = normalizeExternalConfigUrl(url);
@@ -32,19 +31,11 @@ export async function resolveClashRuleBaseConfig({
         if (cached) return cached;
     }
 
-    try {
-        const fetchedConfig = await fetchClashRuleBaseConfig(normalizedUrl, userAgent);
-        if (ttlSeconds > 0) {
-            await writeCachedConfig(cacheKey, fetchedConfig, ttlSeconds, kv, logger);
-        }
-        return fetchedConfig;
-    } catch (error) {
-        if (fallbackConfig) {
-            logger?.warn?.(`Failed to fetch Clash rule base from ${normalizedUrl}; using embedded fallback. ${formatError(error)}`);
-            return fallbackConfig;
-        }
-        throw error;
+    const fetchedConfig = await fetchClashRuleBaseConfig(normalizedUrl, userAgent);
+    if (ttlSeconds > 0) {
+        await writeCachedConfig(cacheKey, fetchedConfig, ttlSeconds, kv, logger);
     }
+    return fetchedConfig;
 }
 
 export async function fetchClashRuleBaseConfig(rawUrl, userAgent) {

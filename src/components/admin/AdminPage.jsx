@@ -46,7 +46,6 @@ export const AdminPage = (props) => {
     adminSaving: t('adminSaving'),
     adminSaved: t('adminSaved'),
     adminSaveFailed: t('adminSaveFailed'),
-    adminInvalidJson: t('adminInvalidJson'),
     adminTemplateId: t('adminTemplateId'),
     adminResetConfirm: t('adminResetConfirm'),
     adminLoginFailed: t('adminLoginFailed')
@@ -382,30 +381,14 @@ export const AdminPage = (props) => {
                     <Toggle model="template.isDefault" label={t('adminTemplateIsDefault')} />
                   </div>
 
-                  <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                      <label class={LABEL_CLASS}>{t('adminTemplateClashRuleBase')}</label>
-                      <input type="text" x-model="template.clashRuleBase" class={INPUT_CLASS} />
-                    </div>
-                    <div>
-                      <label class={LABEL_CLASS}>{t('adminTemplateQuanxRuleBase')}</label>
-                      <input type="text" x-model="template.quanxRuleBase" class={INPUT_CLASS} />
-                    </div>
-                  </div>
-
                   <div>
-                    <label class={LABEL_CLASS}>{t('adminTemplateOmittedGroups')}</label>
-                    <textarea rows={3} x-model="template.omittedText" class={TEXTAREA_CLASS}></textarea>
+                    <label class={LABEL_CLASS}>{t('adminTemplateClashRuleBase')}</label>
+                    <input type="text" x-model="template.clashRuleBase" class={INPUT_CLASS} />
                   </div>
 
                   <div>
                     <label class={LABEL_CLASS}>{t('adminTemplateLines')}</label>
                     <textarea rows={8} x-model="template.linesText" class={TEXTAREA_CLASS}></textarea>
-                  </div>
-
-                  <div>
-                    <label class={LABEL_CLASS}>{t('adminTemplateFallbackConfig')}</label>
-                    <textarea rows={6} x-model="template.fallbackText" class={TEXTAREA_CLASS}></textarea>
                   </div>
                 </div>
               </div>

@@ -6,10 +6,8 @@
  * Template shape:
  * {
  *   id, name, enabled, isDefault,
- *   clashRuleBase, quanxRuleBase,
- *   omittedGroups: string[],
- *   subconverterLines: string[],
- *   fallbackClashConfig: object|null
+ *   clashRuleBase,
+ *   subconverterLines: string[]
  * }
  */
 
@@ -23,10 +21,9 @@ const BUILTIN_RULE_TARGETS = new Set(['DIRECT', 'REJECT', 'REJECT-DROP', 'PASS']
  * list means the template compiles to a self-consistent Clash rule section. Unknown
  * directives are ignored on purpose: /subconverter passes them through verbatim.
  */
-export function validateTemplateLines(subconverterLines, omittedGroups = []) {
+export function validateTemplateLines(subconverterLines) {
 	const lines = (Array.isArray(subconverterLines) ? subconverterLines : [])
 		.filter(line => typeof line === 'string' && line.trim());
-	const omitted = new Set(Array.isArray(omittedGroups) ? omittedGroups : []);
 	const issues = [];
 
 	const definedGroups = new Set();
@@ -40,9 +37,7 @@ export function validateTemplateLines(subconverterLines, omittedGroups = []) {
 		definedGroups.add(name);
 	}
 
-	// Omitted groups are intentionally dropped at compile time, so referencing one is
-	// the author's choice rather than a dangling reference.
-	const knownTargets = new Set([...definedGroups, ...omitted, ...BUILTIN_RULE_TARGETS]);
+	const knownTargets = new Set([...definedGroups, ...BUILTIN_RULE_TARGETS]);
 
 	for (const line of lines) {
 		if (line.startsWith(RULESET_PREFIX)) {
@@ -83,10 +78,6 @@ function getRulesetLines(template) {
 
 function getProxyGroupLines(template) {
 	return getTemplateLines(template).filter(line => line.startsWith(PROXY_GROUP_PREFIX));
-}
-
-function getOmittedGroups(template) {
-	return new Set(Array.isArray(template?.omittedGroups) ? template.omittedGroups : []);
 }
 
 function createRuleProviderName(url, usedNames, index) {
@@ -178,14 +169,11 @@ function parseUrlTestTiming(value = '') {
 	};
 }
 
-function appendGroupMembers(target, members = [], proxyNames = [], omittedGroups = new Set()) {
+function appendGroupMembers(target, members = [], proxyNames = []) {
 	members.forEach(member => {
 		if (!member) return;
 		if (member.startsWith('[]')) {
-			const groupOrProxyName = member.slice(2);
-			if (!omittedGroups.has(groupOrProxyName)) {
-				target.proxies.push(groupOrProxyName);
-			}
+			target.proxies.push(member.slice(2));
 			return;
 		}
 		const matches = getMatchedProxyNames(member, proxyNames);
@@ -234,13 +222,10 @@ function getRuleTargetGroup(rule) {
 }
 
 function buildProxyGroups(template, { proxyNames = [], providerNames = [] } = {}) {
-	const omittedGroups = getOmittedGroups(template);
-
 	const groups = getProxyGroupLines(template).map(line => {
 		const payload = line.slice(PROXY_GROUP_PREFIX.length);
 		const [name, type, ...parts] = payload.split('`');
 		if (!name || !type) return null;
-		if (omittedGroups.has(name)) return null;
 
 		if (type === 'url-test') {
 			const [pattern = '.*', url = 'http://www.gstatic.com/generate_204', timing = '300'] = parts;
@@ -262,7 +247,7 @@ function buildProxyGroups(template, { proxyNames = [], providerNames = [] } = {}
 			type,
 			proxies: []
 		};
-		appendGroupMembers(group, parts, proxyNames, omittedGroups);
+		appendGroupMembers(group, parts, proxyNames);
 		if (providerNames.length > 0 && parts.includes('.*')) {
 			group.use = providerNames;
 		}
@@ -300,13 +285,10 @@ export function buildTemplateClashSections(template, options) {
 // defines before any proxy names are matched, so the homepage can show what a
 // fixed template contains instead of a bare "template applied" notice.
 export function summarizeTemplate(template) {
-	const omittedGroups = getOmittedGroups(template);
-
 	const groups = getProxyGroupLines(template).map(line => {
 		const payload = line.slice(PROXY_GROUP_PREFIX.length);
 		const [name, type, ...parts] = payload.split('`');
 		if (!name || !type) return null;
-		if (omittedGroups.has(name)) return null;
 		return {
 			name,
 			type,
@@ -373,20 +355,18 @@ function normalizeConfigUrl(value, fallback) {
 }
 
 export function generateTemplateSubconverterConfig(template, options) {
-	const { clashRuleBase, quanxRuleBase } = options || {};
+	const { clashRuleBase } = options || {};
 	const lines = getTemplateLines(template);
 	const resolvedClashRuleBase = normalizeConfigUrl(clashRuleBase, template?.clashRuleBase);
-	const resolvedQuanxRuleBase = normalizeConfigUrl(quanxRuleBase, template?.quanxRuleBase);
-	// A template without its own base URL keeps both keys present but empty,
-	// so consumers can still parse the file instead of reading "undefined".
-	const asBaseLine = (key, value) => `${key}=${typeof value === 'string' ? value : ''}`;
+	// A template without its own base URL keeps the key present but empty, so
+	// consumers can still parse the file instead of reading "undefined".
+	const clashRuleBaseLine = `clash_rule_base=${typeof resolvedClashRuleBase === 'string' ? resolvedClashRuleBase : ''}`;
 
 	// Backup emitted a trailing ';luck' marker; upstream payloads may still
 	// match on it, so the generated text stays byte-compatible.
 	return [
 		...lines,
-		asBaseLine('clash_rule_base', resolvedClashRuleBase),
-		asBaseLine('quanx_rule_base', resolvedQuanxRuleBase),
+		clashRuleBaseLine,
 		';luck'
 	].join('\n');
 }

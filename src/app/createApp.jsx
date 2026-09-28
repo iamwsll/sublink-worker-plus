@@ -316,8 +316,7 @@ export function createApp(bindings = {}) {
 
             if (template) {
                 const config = generateTemplateSubconverterConfig(template, {
-                    clashRuleBase: c.req.query('clash_rule_base') || c.req.query('clashRuleBase'),
-                    quanxRuleBase: c.req.query('quanx_rule_base') || c.req.query('quanxRuleBase')
+                    clashRuleBase: c.req.query('clash_rule_base') || c.req.query('clashRuleBase')
                 });
                 return c.text(config, 200, {
                     'Content-Type': 'text/plain; charset=utf-8'
@@ -671,22 +670,16 @@ function applyTemplateExclusions(c, template) {
     return excluded ? excludeTemplateRules(template, excluded) : template;
 }
 
-// A template without its own base URL must still resolve: its embedded fallback config is
-// the only copy of the template's rule-providers available offline.
+// A template's base config is simply its URL (KV-cached); without one the builder's
+// built-in default base applies.
 async function resolveTemplateClashRuleBase({ template, userAgent, kv, cacheTtlSeconds, refresh, logger }) {
-    const fallbackConfig = template.fallbackClashConfig || undefined;
-    if (!template.clashRuleBase) {
-        // Nothing to fetch: the builder falls back to its built-in base config when this
-        // returns undefined, and a template fallback (when present) is used as-is.
-        return fallbackConfig;
-    }
+    if (!template.clashRuleBase) return undefined;
     return resolveClashRuleBaseConfig({
         url: template.clashRuleBase,
         userAgent,
         kv,
         cacheTtlSeconds,
         refresh,
-        fallbackConfig,
         logger
     });
 }

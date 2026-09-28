@@ -83,14 +83,7 @@ export const adminLogicFn = (t) => {
                     enabled: source.enabled !== false,
                     isDefault: source.isDefault === true,
                     clashRuleBase: trimString(source.clashRuleBase),
-                    quanxRuleBase: trimString(source.quanxRuleBase),
-                    omittedText: joinLines(source.omittedGroups),
                     linesText: joinLines(source.subconverterLines),
-                    // null round-trips as an empty textarea; printing the literal "null" there
-                    // would be far more confusing to edit
-                    fallbackText: isPlainObject(source.fallbackClashConfig)
-                        ? JSON.stringify(source.fallbackClashConfig, null, 2)
-                        : '',
                     expanded: false
                 };
             },
@@ -170,10 +163,7 @@ export const adminLogicFn = (t) => {
                     enabled: true,
                     isDefault: false,
                     clashRuleBase: '',
-                    quanxRuleBase: '',
-                    omittedText: '',
                     linesText: '',
-                    fallbackText: '',
                     expanded: true
                 });
             },
@@ -210,32 +200,14 @@ export const adminLogicFn = (t) => {
                 let errorKey = '';
                 let errorDetail = '';
 
-                const templates = this.templates.map((template) => {
-                    const fallbackText = trimString(template.fallbackText);
-                    let fallbackClashConfig = null;
-
-                    if (fallbackText) {
-                        try {
-                            fallbackClashConfig = JSON.parse(fallbackText);
-                        } catch (error) {
-                            // Report the first broken editor so the operator knows where to look
-                            errorKey = errorKey || 'adminInvalidJson';
-                            errorDetail = errorDetail || (template.name || template.id);
-                        }
-                    }
-
-                    return {
-                        id: sanitizeTemplateId(template.id),
-                        name: trimString(template.name),
-                        enabled: template.enabled === true,
-                        isDefault: template.isDefault === true,
-                        clashRuleBase: trimString(template.clashRuleBase),
-                        quanxRuleBase: trimString(template.quanxRuleBase),
-                        omittedGroups: splitLines(template.omittedText),
-                        subconverterLines: splitLines(template.linesText),
-                        fallbackClashConfig: fallbackClashConfig
-                    };
-                });
+                const templates = this.templates.map((template) => ({
+                    id: sanitizeTemplateId(template.id),
+                    name: trimString(template.name),
+                    enabled: template.enabled === true,
+                    isDefault: template.isDefault === true,
+                    clashRuleBase: trimString(template.clashRuleBase),
+                    subconverterLines: splitLines(template.linesText)
+                }));
 
                 // why: the storage layer drops templates with an unusable id, so a bad id would
                 // silently delete the template on save instead of telling the operator

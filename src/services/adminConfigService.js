@@ -75,7 +75,7 @@ export class AdminConfigService {
         // Compile-time structural check: a dangling ruleset target or group reference is
         // silently dropped when generating configs, so reject it at save time instead.
         const issues = config.templates.flatMap(template =>
-            validateTemplateLines(template.subconverterLines, template.omittedGroups)
+            validateTemplateLines(template.subconverterLines)
                 .map(issue => `Template "${template.name || template.id}": ${issue}`)
         );
         if (issues.length > 0) {
@@ -187,10 +187,7 @@ function normalizeTemplates(value) {
             enabled: typeof item.enabled === 'boolean' ? item.enabled : true,
             isDefault,
             clashRuleBase: normalizeOptionalHttpUrl(item.clashRuleBase),
-            quanxRuleBase: normalizeOptionalHttpUrl(item.quanxRuleBase),
-            omittedGroups: normalizeStringList(item.omittedGroups),
-            subconverterLines: normalizeSubconverterLines(item.subconverterLines),
-            fallbackClashConfig: cloneFallbackClashConfig(item.fallbackClashConfig)
+            subconverterLines: normalizeSubconverterLines(item.subconverterLines)
         });
     }
 
@@ -203,14 +200,6 @@ function normalizeSubconverterLines(value) {
         // A newline inside a line would inject extra subconverter directives, so drop such lines.
         .filter(line => typeof line === 'string' && !/[\r\n]/.test(line))
         .map(line => line.trim())
-        .filter(Boolean);
-}
-
-function normalizeStringList(value) {
-    if (!Array.isArray(value)) return [];
-    return value
-        .filter(item => typeof item === 'string')
-        .map(item => item.trim())
         .filter(Boolean);
 }
 
@@ -230,17 +219,6 @@ function normalizeOptionalHttpUrl(value) {
 
 function normalizeOptionalString(value) {
     return typeof value === 'string' ? value.trim() : '';
-}
-
-function cloneFallbackClashConfig(value) {
-    if (!isPlainObject(value)) return null;
-    try {
-        // Deep copy keeps the stored config isolated from later caller mutations.
-        return cloneJson(value);
-    } catch {
-        // Unserializable values (e.g. cyclic objects) cannot be persisted anyway.
-        return null;
-    }
 }
 
 function assertSavableConfig(raw) {
