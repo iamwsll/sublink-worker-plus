@@ -215,6 +215,17 @@ export const AdminPage = (props) => {
         <div class={CARD_CLASS}>
           <SectionHeading icon="fa-layer-group" title={t('adminRuleSetsSection')} hint={t('adminRuleSetsHint')} />
 
+          {/* A default template owns the Clash rule section, so these groups only reach
+              sing-box/surge output while one is active. Reactive to the edit in progress. */}
+          <div
+            x-show="templates.some(template => template.enabled && template.isDefault)"
+            x-cloak
+            class="mb-4 px-4 py-3 rounded-lg bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 text-amber-700 dark:text-amber-400 text-sm flex items-start gap-2"
+          >
+            <i class="fas fa-exclamation-triangle mt-0.5"></i>
+            <span>{t('adminRuleSetsTemplateHint')}</span>
+          </div>
+
           <div class="space-y-4">
             <template x-for="(ruleSet, index) in ruleSets" x-bind:key="ruleSet.key">
               <div class="bg-gray-50 dark:bg-gray-700/30 rounded-xl p-4 border border-gray-200 dark:border-gray-700">
