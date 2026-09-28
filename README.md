@@ -1,16 +1,10 @@
 <div align="center">
-  <img src="public/favicon.png" alt="Sublink Worker" width="120" height="120"/>
+  <img src="public/favicon.png" alt="Sublink Worker Plus" width="120" height="120"/>
 
-  <h1><b>Sublink Worker</b></h1>
-  <h5><i>One Worker, All Subscriptions</i></h5>
+  <h1><b>Sublink Worker Plus</b></h1>
+  <h5><i>One Worker, All Subscriptions — Now with an Admin Panel</i></h5>
 
-  <p><b>A lightweight subscription converter and manager for proxy protocols, deployable on Cloudflare Workers, Vercel, Node.js, or Docker.</b></p>
-
-  <p><i>Enhanced fork of <a href="https://github.com/7Sageer/sublink-worker">7Sageer/sublink-worker</a> with a unified admin panel and configurable rule templates.</i></p>
-
-  <a href="https://trendshift.io/repositories/12291" target="_blank">
-    <img src="https://trendshift.io/api/badge/repositories/12291" alt="7Sageer%2Fsublink-worker | Trendshift" width="250" height="55"/>
-  </a>
+  <p><b>An enhanced fork of <a href="https://github.com/7Sageer/sublink-worker">Sublink Worker</a>: the same lightweight subscription converter for Cloudflare Workers / Vercel / Node.js / Docker, plus a unified admin panel, rule templates, and a richer API.</b></p>
 
   <br>
 
@@ -46,6 +40,17 @@
 - **Node.js**: `npm run build:node && node dist/node-server.cjs`
 - **Vercel**: `vercel deploy` (configure KV in project settings)
 - **Docker**: `docker compose up -d` (includes Redis)
+
+## ➕ What's Plus
+
+Everything upstream has, plus:
+
+- **🛠️ Unified Admin Panel** (`/admin`) — change server-side defaults without a redeploy: default rule preset, global custom rule sets, policy-group defaults, remote Clash base config, and rule templates. One `ADMIN_PASSWORD` env var turns it on
+- **📋 Rule Templates** — paste subconverter INI lines (`ruleset=` / `custom_proxy_group=`) and fully own the generated Clash rules and policy groups; switch templates per request with `?template=<id>`
+- **🧩 Custom Rule Groups everywhere** — point any rule group at your own remote rule lists via `customRuleGroups`, on all four builder endpoints
+- **🎛️ Policy-group defaults** — decide which option each selector starts on (e.g. Bilibili → DIRECT) with `group_defaults` or the admin panel
+- **🌐 Remote Clash base config** — `clash_rule_base` merges any hosted Clash YAML as the base config, cached in KV with TTL/refresh controls
+- **📡 UDP override** — `?udp=true|false` forces the udp flag across all Clash proxies
 
 ## ✨ Features
 
@@ -134,10 +139,10 @@ This project is for learning and exchange purposes only. Please do not use it fo
 
 Thanks to everyone who has starred this project! 🌟
 
-<a href="https://star-history.com/#7Sageer/sublink-worker&Date">
+<a href="https://star-history.com/#iamwsll/sublink-worker-plus&Date">
  <picture>
-   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=7Sageer/sublink-worker&type=Date&theme=dark" />
-   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=7Sageer/sublink-worker&type=Date" />
-   <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=7Sageer/sublink-worker&type=Date" />
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=iamwsll/sublink-worker-plus&type=Date&theme=dark" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=iamwsll/sublink-worker-plus&type=Date" />
+   <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=iamwsll/sublink-worker-plus&type=Date" />
  </picture>
 </a>
