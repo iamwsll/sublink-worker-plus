@@ -1,5 +1,6 @@
 
 import { SING_BOX_CONFIG, generateRuleSets, generateRules, getOutbounds, PREDEFINED_RULE_SETS, DIRECT_DEFAULT_RULES, REJECT_ACTION_RULES } from '../config/index.js';
+import { buildTemplateSingboxSections } from '../config/ruleTemplateBackends.js';
 import { BaseConfigBuilder } from './BaseConfigBuilder.js';
 import { deepCopy, groupProxiesByCountry } from '../utils.js';
 import { addProxyWithDedup } from './helpers/proxyHelpers.js';
@@ -597,12 +598,7 @@ export class SingboxConfigBuilder extends BaseConfigBuilder {
         this.config.route.rule_set = [...site_rule_sets, ...ip_rule_sets];
         this.configureRuleSetDownload();
 
-        // Add outbound_providers if we have any
-        if (this.providerUrls.length > 0) {
-            const existingProviders = Array.isArray(this.config.outbound_providers) ? this.config.outbound_providers : [];
-            const newProviders = this.generateOutboundProviders();
-            this.config.outbound_providers = [...existingProviders, ...newProviders];
-        }
+        this.applyOutboundProviders();
 
         // Validate outbounds: fill empty urltest groups with all proxies
         this.validateOutbounds();
@@ -680,36 +676,85 @@ export class SingboxConfigBuilder extends BaseConfigBuilder {
 
         this.config.route.auto_detect_interface = true;
         this.config.route.final = this.t('outboundNames.Fall Back');
-        // 如果启用了 Clash UI，添加配置
-        // 如果启用 Clash UI 或传入了自定义参数，添加/覆盖 Clash API 配置
-        if (this.enableClashUI || this.externalController || this.externalUiDownloadUrl) {
-            const defaultExternalController = "0.0.0.0:9090";
-            const defaultExternalUiDownloadUrl = "https://gh-proxy.com/https://github.com/Zephyruso/zashboard/archive/refs/heads/gh-pages.zip";
-            const defaultExternalUi = "./ui";
-            const defaultSecret = "";
-            const defaultDownloadDetour = "DIRECT";
-            const defaultClashMode = "rule";
-
-            this.config.experimental = this.config.experimental || {};
-            const existingClashApi = this.config.experimental.clash_api || {};
-
-            const externalController = this.externalController || existingClashApi.external_controller || defaultExternalController;
-            const externalUiDownloadUrl = this.externalUiDownloadUrl || existingClashApi.external_ui_download_url || defaultExternalUiDownloadUrl;
-            const externalUi = existingClashApi.external_ui || defaultExternalUi;
-            const secret = existingClashApi.secret ?? defaultSecret;
-            const externalUiDownloadDetour = existingClashApi.external_ui_download_detour || defaultDownloadDetour;
-            const clashMode = existingClashApi.default_mode || defaultClashMode;
-
-            this.config.experimental.clash_api = {
-                ...existingClashApi,
-                external_controller: externalController,
-                external_ui: externalUi,
-                external_ui_download_url: externalUiDownloadUrl,
-                external_ui_download_detour: externalUiDownloadDetour,
-                secret,
-                default_mode: clashMode
-            };
-        }
+        this.applyClashUiOverrides();
         return this.config;
+    }
+
+    /**
+     * Build the config from a user-supplied rule template instead of the built-in
+     * rule set: the template owns route rules, rule-sets and the group outbounds,
+     * while node/structural outbounds and DNS stay as built.
+     */
+    formatTemplateConfig(template, { rewriteRuleSetUrl } = {}) {
+        const { ruleSets, outbounds, rules, final } = buildTemplateSingboxSections(template, {
+            proxyNames: this.getProxyList(),
+            providerNames: this.getAllProviderTags(),
+            rewriteRuleSetUrl
+        });
+
+        const structural = this.config.outbounds.filter(o => o?.type !== 'selector' && o?.type !== 'urltest');
+        this.config.outbounds = [...structural, ...outbounds];
+        this.config.route.rule_set = ruleSets;
+        this.configureRuleSetDownload();
+
+        // The head rules and the base DNS both reference Node Select, which a template
+        // replaces; retarget them at the template's first group.
+        const globalTarget = outbounds[0]?.tag || final || 'DIRECT';
+        this.config.route.rules = [
+            { action: 'sniff' },
+            { protocol: 'dns', action: 'hijack-dns' },
+            { clash_mode: 'direct', outbound: 'DIRECT' },
+            { clash_mode: 'global', outbound: globalTarget },
+            ...rules
+        ];
+        this.config.route.final = final || 'DIRECT';
+        this.config.route.auto_detect_interface = true;
+        if (this.config?.dns?.servers?.length > 0 && this.config.dns.servers[0].detour === this.t('outboundNames.Node Select')) {
+            this.config.dns.servers[0].detour = globalTarget;
+        }
+
+        this.applyOutboundProviders();
+        this.sanitizeLegacySpecialOutbounds();
+        this.applyClashUiOverrides();
+        return this.config;
+    }
+
+    applyOutboundProviders() {
+        if (this.providerUrls.length > 0) {
+            const existingProviders = Array.isArray(this.config.outbound_providers) ? this.config.outbound_providers : [];
+            const newProviders = this.generateOutboundProviders();
+            this.config.outbound_providers = [...existingProviders, ...newProviders];
+        }
+    }
+
+    applyClashUiOverrides() {
+        // 如果启用 Clash UI 或传入了自定义参数，添加/覆盖 Clash API 配置
+        if (!(this.enableClashUI || this.externalController || this.externalUiDownloadUrl)) return;
+        const defaultExternalController = "0.0.0.0:9090";
+        const defaultExternalUiDownloadUrl = "https://gh-proxy.com/https://github.com/Zephyruso/zashboard/archive/refs/heads/gh-pages.zip";
+        const defaultExternalUi = "./ui";
+        const defaultSecret = "";
+        const defaultDownloadDetour = "DIRECT";
+        const defaultClashMode = "rule";
+
+        this.config.experimental = this.config.experimental || {};
+        const existingClashApi = this.config.experimental.clash_api || {};
+
+        const externalController = this.externalController || existingClashApi.external_controller || defaultExternalController;
+        const externalUiDownloadUrl = this.externalUiDownloadUrl || existingClashApi.external_ui_download_url || defaultExternalUiDownloadUrl;
+        const externalUi = existingClashApi.external_ui || defaultExternalUi;
+        const secret = existingClashApi.secret ?? defaultSecret;
+        const externalUiDownloadDetour = existingClashApi.external_ui_download_detour || defaultDownloadDetour;
+        const clashMode = existingClashApi.default_mode || defaultClashMode;
+
+        this.config.experimental.clash_api = {
+            ...existingClashApi,
+            external_controller: externalController,
+            external_ui: externalUi,
+            external_ui_download_url: externalUiDownloadUrl,
+            external_ui_download_detour: externalUiDownloadDetour,
+            secret,
+            default_mode: clashMode
+        };
     }
 }

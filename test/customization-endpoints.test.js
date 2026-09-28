@@ -657,12 +657,29 @@ describe('/surge customization', () => {
         expect(groupLine).toContain('select, DIRECT,');
     });
 
-    it('ignores a template id and keeps the built-in rule section', async () => {
+    it('applies a template id to the proxy groups and rules', async () => {
         const kv = new MemoryKVAdapter();
         await seedAdminConfig(kv, { templates: [{ ...MINI_TEMPLATE, enabled: true, isDefault: true }] });
         const app = createTestApp({ kv });
 
         const res = await app.request(url('/surge', { config: SS_NODES, template: 'mini' }));
+
+        expect(res.status).toBe(200);
+        const text = await res.text();
+        // The template owns [Proxy Group] and [Rule].
+        expect(text).toContain('RULE-SET,https://mini.test/lists/Google.list,Proxy');
+        expect(text).toContain('GEOIP,CN,Direct');
+        expect(text).toContain('FINAL,Final');
+        expect(text).toContain('Manual = select');
+        expect(text).not.toContain('FINAL,🐟 漏网之鱼');
+    });
+
+    it('keeps the built-in rules when the request customizes rules', async () => {
+        const kv = new MemoryKVAdapter();
+        await seedAdminConfig(kv, { templates: [{ ...MINI_TEMPLATE, enabled: true, isDefault: true }] });
+        const app = createTestApp({ kv });
+
+        const res = await app.request(url('/surge', { config: SS_NODES, selectedRules: 'minimal' }));
 
         expect(res.status).toBe(200);
         const text = await res.text();
@@ -815,5 +832,91 @@ describe('/subconverter customization', () => {
 
         expect(balanced).toContain('GEOSITE,google');
         expect(comprehensive).toContain('GEOSITE,bilibili');
+    });
+});
+describe('/singbox templates', () => {
+    it('applies the default template to route rules and group outbounds', async () => {
+        const kv = new MemoryKVAdapter();
+        await seedAdminConfig(kv, { templates: [{ ...MINI_TEMPLATE, enabled: true, isDefault: true }] });
+        const app = createTestApp({ kv });
+
+        const res = await app.request(url('/singbox', { config: SS_NODES }));
+
+        expect(res.status).toBe(200);
+        const config = await res.json();
+
+        const tags = config.outbounds.map(o => o.tag);
+        expect(tags).toContain('Proxy');
+        expect(tags).toContain('Final');
+        // The built-in rule groups are gone; node outbounds stay.
+        expect(tags).not.toContain('🚀 节点选择');
+        expect(config.outbounds.some(o => o.type === 'shadowsocks')).toBe(true);
+
+        const google = config.route.rule_set.find(r => r.tag === 'Google');
+        expect(google.format).toBe('source');
+        expect(google.url).toContain('/ruleset/singbox?url=');
+        expect(google.url).toContain(encodeURIComponent('https://mini.test/lists/Google.list'));
+
+        expect(config.route.rules).toContainEqual({ rule_set: ['Google'], outbound: 'Proxy' });
+        expect(config.route.rules).toContainEqual({ rule_set: ['geoip-cn'], outbound: 'Direct' });
+        expect(config.route.final).toBe('Final');
+        expect(config.route.rules[0]).toEqual({ action: 'sniff' });
+    });
+
+    it('keeps the built-in rule engine when the request customizes rules', async () => {
+        const kv = new MemoryKVAdapter();
+        await seedAdminConfig(kv, { templates: [{ ...MINI_TEMPLATE, enabled: true, isDefault: true }] });
+        const app = createTestApp({ kv });
+
+        const res = await app.request(url('/singbox', { config: SS_NODES, selectedRules: 'minimal' }));
+
+        expect(res.status).toBe(200);
+        const config = await res.json();
+        expect(config.outbounds.map(o => o.tag)).not.toContain('Manual');
+        expect(config.route.rule_set.every(r => !String(r.url).includes('mini.test'))).toBe(true);
+    });
+
+    it('drops excluded template rules from the sing-box sections too', async () => {
+        const kv = new MemoryKVAdapter();
+        await seedAdminConfig(kv, { templates: [{ ...MINI_TEMPLATE, enabled: true, isDefault: true }] });
+        const app = createTestApp({ kv });
+
+        const res = await app.request(url('/singbox', {
+            config: SS_NODES,
+            template_excluded_rules: JSON.stringify(['Proxy::Google'])
+        }));
+
+        const config = await res.json();
+        expect(config.route.rule_set.find(r => r.tag === 'Google')).toBeUndefined();
+        expect(config.route.rules).not.toContainEqual({ rule_set: ['Google'], outbound: 'Proxy' });
+        expect(config.route.final).toBe('Final');
+    });
+});
+
+describe('/ruleset/singbox', () => {
+    it('converts a remote classical list and caches the result', async () => {
+        const fetchMock = stubFetchYaml('DOMAIN-SUFFIX,google.com\nIP-CIDR,1.2.3.0/24,no-resolve\n');
+        const kv = new MemoryKVAdapter();
+        const app = createTestApp({ kv });
+
+        const res = await app.request(url('/ruleset/singbox', { url: 'https://lists.test/google.list' }));
+
+        expect(res.status).toBe(200);
+        expect(res.headers.get('content-type')).toContain('application/json');
+        expect(await res.json()).toEqual({
+            version: 1,
+            rules: [{ domain_suffix: ['google.com'] }, { ip_cidr: ['1.2.3.0/24'] }]
+        });
+
+        const again = await app.request(url('/ruleset/singbox', { url: 'https://lists.test/google.list' }));
+        expect(again.status).toBe(200);
+        expect(fetchMock).toHaveBeenCalledTimes(1);
+    });
+
+    it('rejects a missing or non-http url', async () => {
+        const app = createTestApp();
+
+        expect((await app.request('http://localhost/ruleset/singbox')).status).toBe(400);
+        expect((await app.request(url('/ruleset/singbox', { url: 'ftp://x.test/a' }))).status).toBe(400);
     });
 });

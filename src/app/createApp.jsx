@@ -15,7 +15,8 @@ import { APP_NAME, APP_SUBTITLE } from '../constants.js';
 import { ShortLinkService } from '../services/shortLinkService.js';
 import { ConfigStorageService } from '../services/configStorageService.js';
 import { AdminConfigService } from '../services/adminConfigService.js';
-import { normalizeClashRuleBaseCacheTtl, resolveClashRuleBaseConfig } from '../services/clashRuleBaseCache.js';
+import { normalizeClashRuleBaseCacheTtl, normalizeExternalConfigUrl, resolveClashRuleBaseConfig } from '../services/clashRuleBaseCache.js';
+import { fetchSingboxRuleSet } from '../services/singboxRuleset.js';
 import { ServiceError, MissingDependencyError } from '../services/errors.js';
 import { normalizeRuntime } from '../runtime/runtimeConfig.js';
 import { PREDEFINED_RULE_SETS, SING_BOX_CONFIG, SING_BOX_CONFIG_V1_11, generateSubconverterConfig } from '../config/index.js';
@@ -118,6 +119,9 @@ export function createApp(bindings = {}) {
             const configId = c.req.query('configId');
             const lang = c.get('lang');
 
+            // Same ownership rule as /clash: a template applies only to requests without
+            // their own rule customisation.
+            const template = applyTemplateExclusions(c, resolveTemplate(adminConfig, c, ['selectedRules', 'customRules', 'customRuleGroups', 'configId']));
             const requestedSingboxVersion = c.req.query('singbox_version') || c.req.query('sb_version') || c.req.query('sb_ver');
             const requestUserAgent = getRequestHeader(c.req, 'User-Agent');
             const singboxConfigVersion = resolveSingboxConfigVersion(requestedSingboxVersion, requestUserAgent);
@@ -151,6 +155,14 @@ export function createApp(bindings = {}) {
             const userinfo = builder.getSubscriptionUserinfo();
             if (userinfo) {
                 c.header('subscription-userinfo', userinfo);
+            }
+            if (template) {
+                // sing-box cannot read classical lists, so remote template rules are
+                // pointed at our converting endpoint unless they already are .srs/.json.
+                const origin = new URL(c.req.url).origin;
+                builder.formatTemplateConfig(template, {
+                    rewriteRuleSetUrl: (listUrl) => `${origin}/ruleset/singbox?url=${encodeURIComponent(listUrl)}`
+                });
             }
             return c.json(builder.config);
         } catch (error) {
@@ -273,6 +285,7 @@ export function createApp(bindings = {}) {
             const groupDefaults = resolveGroupDefaults(c.req.query('group_defaults'), adminConfig?.groupDefaults);
             const configId = c.req.query('configId');
             const lang = c.get('lang');
+            const template = applyTemplateExclusions(c, resolveTemplate(adminConfig, c, ['selectedRules', 'customRules', 'customRuleGroups', 'configId']));
 
             let baseConfig;
             if (configId?.startsWith('surge_')) {
@@ -299,7 +312,34 @@ export function createApp(bindings = {}) {
             if (userinfo) {
                 c.header('subscription-userinfo', userinfo);
             }
-            return c.text(builder.formatConfig());
+            return c.text(template ? builder.formatTemplateConfig(template) : builder.formatConfig());
+        } catch (error) {
+            return handleError(c, error, runtime.logger);
+        }
+    });
+
+    // sing-box cannot consume classical rule lists directly; this endpoint converts one
+    // on demand (KV-cached) so template rule lists work for sing-box output too.
+    app.get('/ruleset/singbox', async (c) => {
+        try {
+            const rawUrl = c.req.query('url');
+            if (!rawUrl) return c.text('Missing url parameter', 400);
+            let normalizedUrl;
+            try {
+                normalizedUrl = normalizeExternalConfigUrl(rawUrl);
+            } catch {
+                return c.text('Invalid url parameter', 400);
+            }
+            // The normalizer only guards shape; fetching must stay http(s).
+            if (!/^https?:\/\//i.test(normalizedUrl)) return c.text('Invalid url parameter', 400);
+            const json = await fetchSingboxRuleSet({
+                url: normalizedUrl,
+                userAgent: getRequestHeader(c.req, 'User-Agent') || DEFAULT_USER_AGENT,
+                kv: runtime.kv,
+                cacheTtlSeconds: runtime.config.clashRuleBaseCacheTtlSeconds,
+                logger: runtime.logger
+            });
+            return c.body(json, 200, { 'Content-Type': 'application/json; charset=utf-8' });
         } catch (error) {
             return handleError(c, error, runtime.logger);
         }

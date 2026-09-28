@@ -63,7 +63,7 @@ export async function fetchClashRuleBaseConfig(rawUrl, userAgent) {
     return parsed;
 }
 
-function normalizeExternalConfigUrl(raw) {
+export function normalizeExternalConfigUrl(raw) {
     if (typeof raw !== 'string') {
         throw new InvalidConfigError('Invalid clash_rule_base URL');
     }

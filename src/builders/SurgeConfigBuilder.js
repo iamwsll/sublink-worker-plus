@@ -1,6 +1,7 @@
 import { BaseConfigBuilder } from './BaseConfigBuilder.js';
 import { groupProxiesByCountry } from '../utils.js';
 import { SURGE_CONFIG, SURGE_SITE_RULE_SET_BASEURL, SURGE_IP_RULE_SET_BASEURL, generateRules, getOutbounds, PREDEFINED_RULE_SETS, DIRECT_DEFAULT_RULES } from '../config/index.js';
+import { buildTemplateSurgeSections } from '../config/ruleTemplateBackends.js';
 import { addProxyWithDedup } from './helpers/proxyHelpers.js';
 import { buildSelectorMembers, buildNodeSelectMembers, buildCustomRuleMembers, uniqueNames, applyGroupPreferredDefault } from './helpers/groupBuilder.js';
 
@@ -375,50 +376,67 @@ export class SurgeConfigBuilder extends BaseConfigBuilder {
         this.manualGroupName = manualGroupName;
     }
 
-    formatConfig() {
-        const rules = generateRules(this.selectedRules, this.customRules, this.customRuleGroups);
-        let finalConfig = [];
+    // Everything before the rules: general/replica/proxy sections plus the given
+    // group lines, shared by the built-in and the template output paths.
+    buildBaseSections(groupStrings) {
+        const lines = [];
 
         if (this.subscriptionUrl) {
-            finalConfig.push(`#!MANAGED-CONFIG ${this.subscriptionUrl} interval=43200 strict=false`);
-            finalConfig.push('');  // 添加一个空行
+            lines.push(`#!MANAGED-CONFIG ${this.subscriptionUrl} interval=43200 strict=false`);
+            lines.push('');  // 添加一个空行
         }
 
-        finalConfig.push('[General]');
+        lines.push('[General]');
         if (this.config.general) {
             Object.entries(this.config.general).forEach(([key, value]) => {
-                finalConfig.push(`${key} = ${value}`);
+                lines.push(`${key} = ${value}`);
             });
         }
 
         if (this.config.replica) {
-            finalConfig.push('\n[Replica]');
+            lines.push('\n[Replica]');
             Object.entries(this.config.replica).forEach(([key, value]) => {
-                finalConfig.push(`${key} = ${value}`);
+                lines.push(`${key} = ${value}`);
             });
         }
 
-        finalConfig.push('\n[Proxy]');
-        finalConfig.push('DIRECT = direct');
+        lines.push('\n[Proxy]');
+        lines.push('DIRECT = direct');
         if (this.config.proxies) {
-            finalConfig.push(...this.config.proxies);
+            lines.push(...this.config.proxies);
         }
 
-        finalConfig.push('\n[Proxy Group]');
-        if (this.config['proxy-groups']) {
-            // Convert object-format groups to Surge string format
-            const groupStrings = this.config['proxy-groups'].map(group => {
-                if (typeof group === 'string') {
-                    return group;
-                } else if (group && typeof group === 'object') {
-                    return this.convertObjectGroupToSurgeString(group);
-                }
-                return null;
-            }).filter(g => g != null);
-            finalConfig.push(...groupStrings);
-        }
+        lines.push('\n[Proxy Group]');
+        lines.push(...groupStrings);
+        lines.push('\n[Rule]');
+        return lines;
+    }
 
-        finalConfig.push('\n[Rule]');
+    formatProxyGroupStrings() {
+        if (!this.config['proxy-groups']) return [];
+        // Convert object-format groups to Surge string format
+        return this.config['proxy-groups'].map(group => {
+            if (typeof group === 'string') {
+                return group;
+            } else if (group && typeof group === 'object') {
+                return this.convertObjectGroupToSurgeString(group);
+            }
+            return null;
+        }).filter(g => g != null);
+    }
+
+    /**
+     * Build the config from a user-supplied rule template instead of the built-in
+     * rule set: the template owns [Proxy Group] and [Rule], the proxy list stays.
+     */
+    formatTemplateConfig(template) {
+        const sections = buildTemplateSurgeSections(template, { proxyNames: this.getProxyList() });
+        return [...this.buildBaseSections(sections.proxyGroups), ...sections.rules].join('\n');
+    }
+
+    formatConfig() {
+        const rules = generateRules(this.selectedRules, this.customRules, this.customRuleGroups);
+        let finalConfig = this.buildBaseSections(this.formatProxyGroupStrings());
 
         // Rule-Set & Domain Rules & IP Rules:  To reduce DNS leaks and unnecessary DNS queries,
         // domain & non-IP rules must precede IP rules

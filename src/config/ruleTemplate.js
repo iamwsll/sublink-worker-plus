@@ -14,7 +14,8 @@
 const RULESET_PREFIX = 'ruleset=';
 const PROXY_GROUP_PREFIX = 'custom_proxy_group=';
 // Clash built-in policy targets that never need a custom_proxy_group definition.
-const BUILTIN_RULE_TARGETS = new Set(['DIRECT', 'REJECT', 'REJECT-DROP', 'PASS']);
+// Exported for the sing-box/surge template compilers, which share the same targets.
+export const BUILTIN_RULE_TARGETS = new Set(['DIRECT', 'REJECT', 'REJECT-DROP', 'PASS']);
 
 /**
  * Static sanity check for template INI lines. Returns human-readable issues; an empty
@@ -255,6 +256,33 @@ function buildProxyGroups(template, { proxyNames = [], providerNames = [] } = {}
 	}).filter(Boolean);
 
 	return dropEmptyGroups(groups);
+}
+
+// Groups in the intermediate shape ({name, type, proxies, use, url, interval, ...}) after
+// the empty-drop fixpoint: the shared front half every backend compiler builds on.
+export function compileTemplateGroups(template, { proxyNames = [], providerNames = [] } = {}) {
+	return buildProxyGroups(template, { proxyNames, providerNames });
+}
+
+// Ruleset lines normalized once for all backends: remote lists get their (deduped)
+// provider name here so every backend refers to the same identity.
+export function parseTemplateRules(template) {
+	const usedNames = new Set();
+	return getRulesetLines(template).map((line, index) => {
+		const payload = line.slice(RULESET_PREFIX.length);
+		const commaIndex = payload.indexOf(',');
+		if (commaIndex === -1) return null;
+		const target = payload.slice(0, commaIndex);
+		const source = payload.slice(commaIndex + 1);
+		if (!source) return null;
+		const inline = source.startsWith('[]');
+		return {
+			target,
+			source,
+			inline,
+			providerName: inline ? null : createRuleProviderName(source, usedNames, index)
+		};
+	}).filter(Boolean);
 }
 
 export function buildTemplateClashSections(template, options) {
