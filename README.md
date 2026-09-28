@@ -43,6 +43,7 @@
 - **Node.js**: `npm run build:node && ADMIN_PASSWORD=your-password node dist/node-server.cjs`
 - **Docker Compose**: `docker compose up -d --build` (builds from source, includes Redis; uncomment `ADMIN_PASSWORD` in `docker-compose.yml` to enable `/admin`)
 - **Cloudflare (manual)**: `npm run deploy` — `setup-kv` creates/reuses the KV namespace and patches `wrangler.toml` automatically
+  - Connecting your own fork via Workers Builds (Import a repository)? Set the deploy command to `npm run deploy` — the plain `npx wrangler deploy` default cannot provision the KV namespace and fails with error 10041
 
 
 ## ➕ What's Plus
