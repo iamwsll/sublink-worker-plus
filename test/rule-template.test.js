@@ -19,6 +19,9 @@ const MINI_TEMPLATE = {
         'custom_proxy_group=Auto`url-test`(HK|US)`http://www.gstatic.com/generate_204`300,,50',
         'custom_proxy_group=Manual`select`.*',
         'custom_proxy_group=Pick`select`[]Manual`[]DIRECT',
+        'custom_proxy_group=Proxy`select`[]Manual`[]DIRECT',
+        'custom_proxy_group=Direct`select`[]DIRECT',
+        'custom_proxy_group=Final`select`[]Proxy`[]DIRECT',
         'custom_proxy_group=Gone`select`.*',
         'custom_proxy_group=Empty`select`'
     ]
@@ -147,7 +150,8 @@ describe('buildTemplateClashSections', () => {
         });
 
         it('drops omitted groups and the references pointing at them', () => {
-            expect(sections.proxyGroups.map(group => group.name)).toEqual(['Auto', 'Manual', 'Pick', 'Empty']);
+            expect(sections.proxyGroups.map(group => group.name))
+                .toEqual(['Auto', 'Manual', 'Pick', 'Proxy', 'Direct', 'Final']);
 
             const pick = sections.proxyGroups.find(group => group.name === 'Pick');
             expect(pick.proxies).toEqual(['Manual', 'DIRECT']);
@@ -155,32 +159,23 @@ describe('buildTemplateClashSections', () => {
             expect(sections.proxyGroups.flatMap(group => group.proxies)).not.toContain('Gone');
         });
 
-        it('leaves an empty select group to the provider fallback', () => {
-            const empty = sections.proxyGroups.find(group => group.name === 'Empty');
-
-            // A select group with neither members nor providers degrades to DIRECT; when
-            // providers exist they win instead.
-            expect(empty).toEqual({ name: 'Empty', type: 'select', proxies: [], use: PROVIDER_NAMES });
+        it('drops a select group that has neither members nor providers', () => {
+            // 'Empty' from MINI_TEMPLATE is absent from the shared sections entirely.
+            expect(sections.proxyGroups.some(group => group.name === 'Empty')).toBe(false);
 
             const withoutProviders = buildTemplateClashSections({
                 subconverterLines: ['custom_proxy_group=Empty`select`']
-            }, { proxyNames: PROXY_NAMES }).proxyGroups[0];
+            }, { proxyNames: PROXY_NAMES }).proxyGroups;
 
-            expect(withoutProviders).toEqual({ name: 'Empty', type: 'select', proxies: PROXY_NAMES });
+            expect(withoutProviders).toEqual([]);
         });
 
-        it('falls back to all proxies when the matcher regex is invalid', () => {
+        it('drops the group when the matcher regex is invalid', () => {
             const broken = buildTemplateClashSections({
                 subconverterLines: ['custom_proxy_group=Auto`url-test`(?i)(HK`http://x`300']
             }, { proxyNames: PROXY_NAMES });
 
-            expect(broken.proxyGroups).toEqual([{
-                name: 'Auto',
-                type: 'url-test',
-                proxies: PROXY_NAMES,
-                url: 'http://x',
-                interval: 300
-            }]);
+            expect(broken.proxyGroups).toEqual([]);
         });
 
         it('uses the default url-test url and interval when the line omits them', () => {
@@ -213,7 +208,8 @@ describe('buildTemplateClashSections', () => {
             const deduped = buildTemplateClashSections({
                 subconverterLines: [
                     'ruleset=A,https://one.test/lists/Google.list',
-                    'ruleset=A,https://two.test/other/Google.list'
+                    'ruleset=A,https://two.test/other/Google.list',
+                    'custom_proxy_group=A`select`[]DIRECT'
                 ]
             });
 
@@ -320,16 +316,37 @@ describe('buildTemplateClashSections', () => {
             expect(built.proxyGroups.find(group => group.name === '🇰🇷 韩国节点').proxies).toEqual(['韩国 首尔 03']);
         });
 
-        it('gives a url-test group all proxies when its pattern matches nothing', () => {
+        it('drops a url-test group whose pattern matches nothing', () => {
             const built = buildTemplateClashSections({
                 subconverterLines: COMPLEX_TEMPLATE.subconverterLines
             }, { proxyNames: ['香港 IEPL 01', 'US Node 04'] });
 
-            // 台湾/狮城 patterns do not match these names, and an empty url-test group would
-            // be invalid, so the compiler keeps every proxy in it.
-            for (const groupName of ['🇨🇳 台湾节点', '🇸🇬 狮城节点']) {
-                expect(built.proxyGroups.find(group => group.name === groupName).proxies).toEqual(['香港 IEPL 01', 'US Node 04']);
-            }
+            // 台湾/狮城 patterns match nothing, so those groups are dropped instead of
+            // being stuffed with every proxy.
+            const groupNames = built.proxyGroups.map(group => group.name);
+            expect(groupNames).not.toContain('🇨🇳 台湾节点');
+            expect(groupNames).not.toContain('🇸🇬 狮城节点');
+        });
+
+        it('strips rules and providers left dangling by dropped groups', () => {
+            const built = buildTemplateClashSections({
+                subconverterLines: [
+                    'ruleset=📲 电报消息,https://fixture.test/lists/Telegram.list',
+                    'ruleset=🎯 全球直连,[]GEOIP,CN',
+                    'ruleset=🐟 漏网之鱼,[]FINAL',
+                    'custom_proxy_group=📲 电报消息`select`(TG|Telegram)',
+                    'custom_proxy_group=🎯 全球直连`select`[]DIRECT',
+                    'custom_proxy_group=🐟 漏网之鱼`select`[]📲 电报消息`[]🎯 全球直连`[]DIRECT'
+                ]
+            }, { proxyNames: ['random-node-01'] });
+
+            // 电报消息 matches nothing and is dropped; the ruleset, its provider and the
+            // reference inside 漏网之鱼 all go with it.
+            expect(built.proxyGroups.map(group => group.name)).toEqual(['🎯 全球直连', '🐟 漏网之鱼']);
+            expect(built.rules).toEqual(['GEOIP,CN,🎯 全球直连', 'MATCH,🐟 漏网之鱼']);
+            expect(Object.keys(built.ruleProviders)).toEqual([]);
+            expect(built.proxyGroups.find(group => group.name === '🐟 漏网之鱼').proxies)
+                .toEqual(['🎯 全球直连', 'DIRECT']);
         });
 
         it('drops the omitted country groups from the output', () => {

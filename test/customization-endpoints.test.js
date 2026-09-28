@@ -27,7 +27,10 @@ const MINI_TEMPLATE = {
         'ruleset=Direct,[]GEOIP,CN',
         'ruleset=Final,[]FINAL',
         'custom_proxy_group=Auto`url-test`.*`http://www.gstatic.com/generate_204`300,,50',
-        'custom_proxy_group=Manual`select`.*'
+        'custom_proxy_group=Manual`select`.*',
+        'custom_proxy_group=Proxy`select`[]Manual`[]DIRECT',
+        'custom_proxy_group=Direct`select`[]DIRECT',
+        'custom_proxy_group=Final`select`[]Proxy`[]DIRECT'
     ],
     fallbackClashConfig: { mode: 'rule', 'mixed-port': 7890 }
 };
@@ -446,7 +449,7 @@ describe('/clash templates', () => {
         expect(config['rule-providers'].Google.url).toBe('https://mini.test/lists/Google.list');
         // The template owns the rule section, including the terminal MATCH.
         expect(config.rules).toEqual(['RULE-SET,Google,Proxy', 'GEOIP,CN,Direct', 'MATCH,Final']);
-        expect(config['proxy-groups'].map(group => group.name)).toEqual(['Auto', 'Manual']);
+        expect(config['proxy-groups'].map(group => group.name)).toEqual(['Auto', 'Manual', 'Proxy', 'Direct', 'Final']);
         expect(config.proxies.map(proxy => proxy.name)).toEqual(['HK-Node-1', 'US-Node-1']);
     });
 
@@ -562,7 +565,10 @@ describe('/clash templates', () => {
                 subconverterLines: [
                     'ruleset=A,https://one.test/lists/Web.list',
                     'ruleset=B,https://two.test/lists/Web.list',
-                    'ruleset=Final,[]FINAL'
+                    'ruleset=Final,[]FINAL',
+                    'custom_proxy_group=A`select`.*',
+                    'custom_proxy_group=B`select`.*',
+                    'custom_proxy_group=Final`select`[]A`[]DIRECT'
                 ]
             }]
         });

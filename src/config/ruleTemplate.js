@@ -152,25 +152,39 @@ function dedupeMembers(group) {
 	return group;
 }
 
-function ensureSelectGroupHasMembers(group, proxyNames = [], providerNames = []) {
+function isEmptyGroup(group) {
 	const hasProxies = Array.isArray(group.proxies) && group.proxies.length > 0;
 	const hasProviders = Array.isArray(group.use) && group.use.length > 0;
-	if (hasProxies || hasProviders || group.type !== 'select') {
-		return group;
+	return !hasProxies && !hasProviders;
+}
+
+// A group whose regex matched nothing must not be stuffed with every proxy: it is dropped,
+// and references to it are stripped from the survivors. Stripping can empty another group
+// (a select group built only from references to dropped ones), so iterate until stable.
+function dropEmptyGroups(groups) {
+	let current = groups;
+	while (true) {
+		const dropped = new Set(current.filter(isEmptyGroup).map(group => group.name));
+		if (dropped.size === 0) return current;
+		current = current
+			.filter(group => !dropped.has(group.name))
+			.map(group => ({
+				...group,
+				proxies: (group.proxies || []).filter(name => !dropped.has(name))
+			}));
 	}
-	// An empty select group is invalid in Clash, so fall back to proxies/providers.
-	if (providerNames.length > 0) {
-		group.use = providerNames;
-		return group;
-	}
-	group.proxies = proxyNames.length > 0 ? proxyNames : ['DIRECT'];
-	return group;
+}
+
+// Every compiled rule ends with its target group: RULE-SET,<provider>,<group>,
+// GEOIP,CN,<group>, MATCH,<group>.
+function getRuleTargetGroup(rule) {
+	return rule.split(',').at(-1);
 }
 
 function buildProxyGroups(template, { proxyNames = [], providerNames = [] } = {}) {
 	const omittedGroups = getOmittedGroups(template);
 
-	return getProxyGroupLines(template).map(line => {
+	const groups = getProxyGroupLines(template).map(line => {
 		const payload = line.slice(PROXY_GROUP_PREFIX.length);
 		const [name, type, ...parts] = payload.split('`');
 		if (!name || !type) return null;
@@ -178,11 +192,10 @@ function buildProxyGroups(template, { proxyNames = [], providerNames = [] } = {}
 
 		if (type === 'url-test') {
 			const [pattern = '.*', url = 'http://www.gstatic.com/generate_204', timing = '300'] = parts;
-			const matchedProxies = getMatchedProxyNames(pattern, proxyNames);
 			const group = {
 				name,
 				type,
-				proxies: matchedProxies.length > 0 ? matchedProxies : proxyNames,
+				proxies: getMatchedProxyNames(pattern, proxyNames),
 				url,
 				...parseUrlTestTiming(timing)
 			};
@@ -201,8 +214,10 @@ function buildProxyGroups(template, { proxyNames = [], providerNames = [] } = {}
 		if (providerNames.length > 0 && parts.includes('.*')) {
 			group.use = providerNames;
 		}
-		return ensureSelectGroupHasMembers(dedupeMembers(group), proxyNames, providerNames);
+		return dedupeMembers(group);
 	}).filter(Boolean);
+
+	return dropEmptyGroups(groups);
 }
 
 export function buildTemplateClashSections(template, options) {
@@ -210,10 +225,22 @@ export function buildTemplateClashSections(template, options) {
 	const { proxyNames = [], providerNames = [] } = options || {};
 	const { ruleProviders, rules } = buildRuleSections(template);
 	const proxyGroups = buildProxyGroups(template, { proxyNames, providerNames });
+
+	// Dropped groups must not leave dangling rule targets or unused providers behind,
+	// or Clash rejects the config for referencing groups that do not exist.
+	const groupNames = new Set(proxyGroups.map(group => group.name));
+	const keptRules = rules.filter(rule => groupNames.has(getRuleTargetGroup(rule)));
+	const usedProviders = new Set(
+		keptRules.filter(rule => rule.startsWith('RULE-SET,')).map(rule => rule.split(',')[1])
+	);
+	const keptProviders = Object.fromEntries(
+		Object.entries(ruleProviders).filter(([name]) => usedProviders.has(name))
+	);
+
 	return {
-		ruleProviders,
+		ruleProviders: keptProviders,
 		proxyGroups,
-		rules
+		rules: keptRules
 	};
 }
 
