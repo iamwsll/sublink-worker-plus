@@ -22,6 +22,9 @@ export const Form = (props) => {
   const { t, lang, adminConfig } = props;
   // Backend-defined rule groups are rendered as extra checkboxes below the built-in list.
   const adminRuleSets = adminConfig?.customRuleSets || [];
+  // A default template owns the whole rule section of generated configs; while one is active
+  // the rule pickers are replaced by a notice and the links must not carry selectedRules.
+  const defaultTemplateName = adminConfig?.defaultTemplateName || '';
 
   const translations = {
     processing: t('processing'),
@@ -58,6 +61,7 @@ export const Form = (props) => {
     window.PREDEFINED_RULE_SETS = ${toScriptJson(PREDEFINED_RULE_SETS)};
     window.ADMIN_RULE_SETS = ${toScriptJson(adminRuleSets)};
     window.ADMIN_GROUP_DEFAULTS = ${toScriptJson(adminConfig?.groupDefaults || {})};
+    window.ADMIN_DEFAULT_TEMPLATE = ${toScriptJson(defaultTemplateName)};
     window.APP_LANG = ${JSON.stringify(lang || 'zh-CN')};
     if (typeof __name === 'undefined') { var __name = function(fn) { return fn; }; }
     (${formLogicFn.toString()})();
@@ -141,7 +145,21 @@ export const Form = (props) => {
   {/* Advanced Options Content */ }
   <div x-show="showAdvanced" {...{'x-transition:enter': 'transition ease-out duration-300', 'x-transition:enter-start': 'opacity-0 transform -translate-y-4', 'x-transition:enter-end': 'opacity-100 transform translate-y-0', 'x-transition:leave': 'transition ease-in duration-200', 'x-transition:leave-start': 'opacity-100 transform translate-y-0', 'x-transition:leave-end': 'opacity-0 transform -translate-y-4'}} class="space-y-6">
 
-    {/* Rule Selection */ }
+    {/* Rule Selection — hidden while a default template owns the rule section */ }
+    {defaultTemplateName ? (
+    <div class="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-700 p-6">
+      <h3 class="text-lg font-semibold text-gray-900 dark:text-white flex items-center gap-2 mb-2">
+        <i class="fas fa-layer-group text-gray-400"></i>
+        {t('templateFixedNotice')}
+      </h3>
+      <p class="text-sm text-gray-500 dark:text-gray-400">{t('templateFixedNoticeDesc')}</p>
+      <p class="mt-3 inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-primary-50 dark:bg-primary-900/20 text-primary-600 dark:text-primary-400 text-sm font-medium">
+        <i class="fas fa-file-export"></i>
+        {defaultTemplateName}
+      </p>
+    </div>
+    ) : (
+    <>
     <div class="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-700 p-6">
       <div class="flex items-center justify-between mb-4">
         <h3 class="text-lg font-semibold text-gray-900 dark:text-white flex items-center gap-2">
@@ -313,6 +331,8 @@ export const Form = (props) => {
       </template>
     </div>
   </div>
+    </>
+    )}
 
     {/* General Options */ }
     <div class="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-700 p-6">

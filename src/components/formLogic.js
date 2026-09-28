@@ -105,6 +105,9 @@ export const formLogicFn = (t) => {
             },
             selectedRules: [],
             selectedPredefinedRule: 'balanced',
+            // Non-empty while the admin default template owns generated rules; rule params
+            // must then stay out of generated links or they would block the template.
+            templateMode: '',
             subconverterCopied: false,
             groupByCountry: false,
             includeAutoSelect: true,
@@ -186,8 +189,15 @@ export const formLogicFn = (t) => {
                     } catch { }
                 }
                 this.customRuleGroups = [];
-                this.clashRuleBase = localStorage.getItem('clashRuleBase') || '';
-                this.externalController = localStorage.getItem('externalController') || '';
+                this.templateMode = typeof window.ADMIN_DEFAULT_TEMPLATE === 'string'
+                    ? window.ADMIN_DEFAULT_TEMPLATE
+                    : '';
+                if (this.templateMode) {
+                    this.selectedPredefinedRule = 'custom';
+                    this.selectedRules = [];
+                    this.groupDefaults = {};
+                }
+                this.clashRuleBase = localStorage.getItem('clashRuleBase') || '';                this.externalController = localStorage.getItem('externalController') || '';
                 this.externalUiDownloadUrl = localStorage.getItem('externalUiDownloadUrl') || '';
                 this.customUA = localStorage.getItem('userAgent') || '';
                 this.configEditor = localStorage.getItem('configEditor') || '';
@@ -336,7 +346,7 @@ export const formLogicFn = (t) => {
             // Shared by /subconverter, the per-client links and the shorten flow so every
             // generated URL carries the same customisation.
             appendCustomizationParams(params) {
-                const customRuleGroups = this.getCustomRuleGroupsForPayload();
+                const customRuleGroups = this.templateMode ? [] : this.getCustomRuleGroupsForPayload();
                 if (customRuleGroups.length > 0) {
                     params.append('customRuleGroups', JSON.stringify(customRuleGroups));
                 }
@@ -359,21 +369,24 @@ export const formLogicFn = (t) => {
                 const origin = window.location.origin;
                 const params = new URLSearchParams();
 
-                // Use preset name directly if a predefined rule set is selected
-                if (this.selectedPredefinedRule && this.selectedPredefinedRule !== 'custom') {
-                    params.append('selectedRules', this.selectedPredefinedRule);
-                } else if (this.selectedPredefinedRule === 'custom') {
-                    params.append('selectedRules', JSON.stringify(this.selectedRules));
-                }
-
-                // Include customRules when available (best-effort; may make URL long)
-                try {
-                    const customRulesInput = document.querySelector('input[name="customRules"]');
-                    const customRules = customRulesInput && customRulesInput.value ? JSON.parse(customRulesInput.value) : [];
-                    if (Array.isArray(customRules) && customRules.length > 0) {
-                        params.append('customRules', JSON.stringify(customRules));
+                // Use preset name directly if a predefined rule set is selected; in template
+                // mode rule params are withheld so the default template can apply.
+                if (!this.templateMode) {
+                    if (this.selectedPredefinedRule && this.selectedPredefinedRule !== 'custom') {
+                        params.append('selectedRules', this.selectedPredefinedRule);
+                    } else if (this.selectedPredefinedRule === 'custom') {
+                        params.append('selectedRules', JSON.stringify(this.selectedRules));
                     }
-                } catch { }
+
+                    // Include customRules when available (best-effort; may make URL long)
+                    try {
+                        const customRulesInput = document.querySelector('input[name="customRules"]');
+                        const customRules = customRulesInput && customRulesInput.value ? JSON.parse(customRulesInput.value) : [];
+                        if (Array.isArray(customRules) && customRules.length > 0) {
+                            params.append('customRules', JSON.stringify(customRules));
+                        }
+                    } catch { }
+                }
 
                 if (!this.includeAutoSelect) {
                     params.append('include_auto_select', 'false');
@@ -539,8 +552,10 @@ export const formLogicFn = (t) => {
                     const params = new URLSearchParams();
                     params.append('config', this.input);
                     params.append('ua', this.customUA);
-                    params.append('selectedRules', JSON.stringify(this.selectedRules));
-                    params.append('customRules', JSON.stringify(customRules));
+                    if (!this.templateMode) {
+                        params.append('selectedRules', JSON.stringify(this.selectedRules));
+                        params.append('customRules', JSON.stringify(customRules));
+                    }
 
                     if (this.groupByCountry) params.append('group_by_country', 'true');
                     if (!this.includeAutoSelect) params.append('include_auto_select', 'false');
@@ -755,8 +770,9 @@ export const formLogicFn = (t) => {
                     this.input = config;
                 }
 
-                // Extract selectedRules
-                const selectedRules = params.get('selectedRules');
+                // Extract selectedRules — in template mode the pickers are hidden, so rule
+                // params from a pasted link are dropped rather than resurrected invisibly.
+                const selectedRules = this.templateMode ? null : params.get('selectedRules');
                 if (selectedRules) {
                     try {
                         const parsed = JSON.parse(selectedRules);
@@ -770,7 +786,7 @@ export const formLogicFn = (t) => {
                 }
 
                 // Extract customRules
-                const customRules = params.get('customRules');
+                const customRules = this.templateMode ? null : params.get('customRules');
                 if (customRules) {
                     try {
                         const parsed = JSON.parse(customRules);
@@ -799,7 +815,7 @@ export const formLogicFn = (t) => {
                     this.clashRuleBase = clashRuleBase;
                 }
 
-                const customRuleGroups = params.get('customRuleGroups');
+                const customRuleGroups = this.templateMode ? null : params.get('customRuleGroups');
                 if (customRuleGroups) {
                     try {
                         const parsed = JSON.parse(customRuleGroups);

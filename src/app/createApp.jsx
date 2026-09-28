@@ -60,7 +60,10 @@ export function createApp(bindings = {}) {
             ? {
                 customRuleSets: storedConfig.customRuleSets,
                 groupDefaults: storedConfig.groupDefaults,
-                defaultRulePreset: storedConfig.defaultRulePreset
+                defaultRulePreset: storedConfig.defaultRulePreset,
+                // A default template owns the generated rule section, so the form must hide
+                // its rule pickers instead of emitting selectedRules that would block it.
+                defaultTemplateName: findDefaultTemplateName(storedConfig)
             }
             : null;
 
@@ -655,6 +658,15 @@ function resolveTemplate(adminConfig, c, treatAsCustomization) {
     return templates.find(template => template.enabled && template.isDefault) ||
         templates.find(template => template.enabled && template.id === adminConfig?.defaultRulePreset) ||
         null;
+}
+
+// Mirrors the implicit-template branch of resolveTemplate for the landing page, where no
+// query parameters exist yet; only the display name is needed for the notice banner.
+function findDefaultTemplateName(adminConfig) {
+    const templates = Array.isArray(adminConfig?.templates) ? adminConfig.templates : [];
+    const template = templates.find(item => item.enabled && item.isDefault) ||
+        templates.find(item => item.enabled && item.id === adminConfig?.defaultRulePreset);
+    return template?.name || '';
 }
 
 // A template without its own base URL must still resolve: its embedded fallback config is

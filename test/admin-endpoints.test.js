@@ -499,4 +499,44 @@ describe('GET / landing page with admin config', () => {
 
         expect(html).toContain('ADMIN_RULE_SETS = []');
     });
+
+    it('shows the template notice and hides rule pickers when a default template exists', async () => {
+        const kv = new MemoryKVAdapter();
+        await kv.put(ADMIN_CONFIG_KEY, JSON.stringify({
+            templates: [{
+                id: 'mine',
+                name: 'My Template',
+                enabled: true,
+                isDefault: true,
+                subconverterLines: ['ruleset=Proxy,https://t.test/a.list']
+            }]
+        }));
+        const app = createTestApp({ kv });
+
+        const html = await (await app.request('http://localhost/')).text();
+
+        expect(html).toContain('ADMIN_DEFAULT_TEMPLATE = "My Template"');
+        expect(html).toContain('My Template');
+        // The rule picker section is server-rendered, so its change handlers must be absent.
+        expect(html).not.toContain(`x-on:change="selectedPredefinedRule`);
+    });
+
+    it('keeps the rule pickers when the default template is disabled', async () => {
+        const kv = new MemoryKVAdapter();
+        await kv.put(ADMIN_CONFIG_KEY, JSON.stringify({
+            templates: [{
+                id: 'mine',
+                name: 'My Template',
+                enabled: false,
+                isDefault: true,
+                subconverterLines: ['ruleset=Proxy,https://t.test/a.list']
+            }]
+        }));
+        const app = createTestApp({ kv });
+
+        const html = await (await app.request('http://localhost/')).text();
+
+        expect(html).toContain('ADMIN_DEFAULT_TEMPLATE = ""');
+        expect(html).toContain('applyPredefinedRule()');
+    });
 });
