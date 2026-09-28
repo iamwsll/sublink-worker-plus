@@ -1,0 +1,8 @@
+# Copy to .dev.vars for local dev, or set as environment variables/secrets when deploying.
+# The Deploy to Cloudflare button picks this file up and offers these as secrets.
+
+# Password for the /admin panel. Leave empty to keep the admin panel disabled.
+ADMIN_PASSWORD=
+
+# Optional: override the default 600s cache TTL for remote Clash base configs.
+# CLASH_RULE_BASE_CACHE_TTL_SECONDS=600

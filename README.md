@@ -12,7 +12,7 @@
   <a href="https://deploy.workers.cloudflare.com/?url=https://github.com/iamwsll/sublink-worker-plus">
     <img src="https://deploy.workers.cloudflare.com/button" alt="Deploy to Cloudflare Workers" style="height: 32px;"/>
   </a>
-  <a href="https://vercel.com/new/clone?repository-url=https://github.com/iamwsll/sublink-worker-plus&env=KV_REST_API_URL,KV_REST_API_TOKEN&envDescription=Vercel%20KV%20credentials%20for%20data%20storage&envLink=https://vercel.com/docs/storage/vercel-kv">
+  <a href="https://vercel.com/new/clone?repository-url=https://github.com/iamwsll/sublink-worker-plus&env=KV_REST_API_URL,KV_REST_API_TOKEN,ADMIN_PASSWORD&envDescription=KV%20credentials%20for%20data%20storage%20and%20an%20optional%20admin%20password%20for%20%2Fadmin&envLink=https://vercel.com/docs/storage/vercel-kv">
     <img src="https://vercel.com/button" alt="Deploy to Vercel" style="height: 32px;"/>
   </a>
 </p>
@@ -33,13 +33,16 @@
 ## 🚀 Quick Start
 
 ### One-Click Deployment
-- Choose a "deploy" button above to click
-- That's it! See the [Document](https://sublink.works/guide/quick-start/) for more information.
+- Choose a "deploy" button above — both point at this repository
+- **Cloudflare Workers**: the button clones the repo into your account, auto-provisions the KV namespace, and deploys via Workers Builds. To enable the admin panel, add `ADMIN_PASSWORD` as a secret afterwards ( Workers → Settings → Variables ), or pre-fill it via the `.dev.vars.example` prompt during setup
+- **Vercel**: fill in `KV_REST_API_URL` / `KV_REST_API_TOKEN`, and optionally `ADMIN_PASSWORD`
+- See the [Document](https://sublink.works/guide/quick-start/) for more information
 
 ### Alternative Runtimes
-- **Node.js**: `npm run build:node && node dist/node-server.cjs`
-- **Vercel**: `vercel deploy` (configure KV in project settings)
-- **Docker**: `docker compose up -d` (includes Redis)
+- **Node.js**: `npm run build:node && ADMIN_PASSWORD=your-password node dist/node-server.cjs`
+- **Docker Compose**: `docker compose up -d --build` (builds from source, includes Redis; uncomment `ADMIN_PASSWORD` in `docker-compose.yml` to enable `/admin`)
+- **Cloudflare (manual)**: `npm run deploy` — `setup-kv` creates/reuses the KV namespace and patches `wrangler.toml` automatically
+
 
 ## ➕ What's Plus
 

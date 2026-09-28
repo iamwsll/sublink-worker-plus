@@ -4,6 +4,9 @@ main = "src/worker.jsx"
 compatibility_date = "2024-07-24"
 compatibility_flags = ["nodejs_compat"]
 
+# The KV id below is a placeholder default: the Deploy to Cloudflare button
+# auto-provisions a namespace and rewrites it, and `npm run setup-kv` does the
+# same for manual deploys.
 kv_namespaces = [
   { binding = "SUBLINK_KV", id = "8943789ed0af49659f887fc740d11240" }
 ]

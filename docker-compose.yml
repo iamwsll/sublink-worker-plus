@@ -1,7 +1,9 @@
 services:
   worker:
-    image: ${SUBLINK_WORKER_IMAGE:-ghcr.io/7sageer/sublink-worker:latest}
-    pull_policy: always
+    # Build from source so the image always matches this repo; set
+    # SUBLINK_WORKER_IMAGE if you publish your own prebuilt image.
+    build: .
+    image: ${SUBLINK_WORKER_IMAGE:-sublink-worker-plus:latest}
     ports:
       - "8787:8787"
     environment:
@@ -10,6 +12,8 @@ services:
       REDIS_KEY_PREFIX: sublink
       # Set to 0 to keep stored configs without automatic expiration.
       CONFIG_TTL_SECONDS: 2592000
+      # Uncomment to enable the /admin panel.
+      # ADMIN_PASSWORD: changeme
     depends_on:
       - redis
   redis:
