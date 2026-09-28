@@ -594,6 +594,36 @@ describe('/clash templates', () => {
         expect(config.proxies.map(proxy => proxy.name)).toEqual(['HK-Node-1', 'US-Node-1']);
         expect(config['rule-providers'].Google).toBeDefined();
     });
+
+    it('excludes individual template rules via template_excluded_rules', async () => {
+        const kv = new MemoryKVAdapter();
+        await seedAdminConfig(kv, { templates: [{ ...MINI_TEMPLATE, enabled: true, isDefault: true }] });
+        const app = createTestApp({ kv });
+
+        const res = await app.request(url('/clash', {
+            config: SS_NODES,
+            template_excluded_rules: JSON.stringify(['Proxy::Google', 'Direct::GEOIP,CN'])
+        }));
+
+        expect(res.status).toBe(200);
+        const config = parseClash(await res.text());
+        expect(config['rule-providers']).toEqual({});
+        expect(config.rules).toEqual(['MATCH,Final']);
+        // Exclusions are not customization: the template still owns the groups.
+        expect(config['proxy-groups'].map(group => group.name)).toEqual(['Auto', 'Manual', 'Proxy', 'Direct', 'Final']);
+    });
+
+    it('ignores a malformed template_excluded_rules value', async () => {
+        const kv = new MemoryKVAdapter();
+        await seedAdminConfig(kv, { templates: [{ ...MINI_TEMPLATE, enabled: true, isDefault: true }] });
+        const app = createTestApp({ kv });
+
+        const res = await app.request(url('/clash', { config: SS_NODES, template_excluded_rules: '{nope' }));
+
+        expect(res.status).toBe(200);
+        const config = parseClash(await res.text());
+        expect(config.rules).toEqual(['RULE-SET,Google,Proxy', 'GEOIP,CN,Direct', 'MATCH,Final']);
+    });
 });
 
 describe('/surge customization', () => {
@@ -699,6 +729,21 @@ describe('/subconverter customization', () => {
         const text = await res.text();
         expect(text).toContain('ruleset=Proxy,https://mini.test/lists/Google.list');
         expect(text).toContain('clash_rule_base=');
+    });
+
+    it('drops excluded template rules from the emitted INI', async () => {
+        const kv = new MemoryKVAdapter();
+        await seedAdminConfig(kv, { templates: [{ ...MINI_TEMPLATE, enabled: true, isDefault: false }] });
+        const app = createTestApp({ kv });
+
+        const res = await app.request(url('/subconverter', {
+            template: 'mini',
+            template_excluded_rules: JSON.stringify(['Proxy::Google'])
+        }));
+
+        const text = await res.text();
+        expect(text).not.toContain('ruleset=Proxy,https://mini.test/lists/Google.list');
+        expect(text).toContain('ruleset=Direct,[]GEOIP,CN');
     });
 
     it('blocks the default template when the query customizes rule groups', async () => {

@@ -63,6 +63,7 @@ export const Form = (props) => {
     window.ADMIN_RULE_SETS = ${toScriptJson(adminRuleSets)};
     window.ADMIN_GROUP_DEFAULTS = ${toScriptJson(adminConfig?.groupDefaults || {})};
     window.ADMIN_DEFAULT_TEMPLATE = ${toScriptJson(defaultTemplateName)};
+    window.ADMIN_TEMPLATE_RULES = ${toScriptJson(templateSummary ? templateSummary.rules : [])};
     window.APP_LANG = ${JSON.stringify(lang || 'zh-CN')};
     if (typeof __name === 'undefined') { var __name = function(fn) { return fn; }; }
     (${formLogicFn.toString()})();
@@ -176,9 +177,14 @@ export const Form = (props) => {
         <h4 class="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">{t('templateSummaryRules')}</h4>
         <ul class="max-h-48 overflow-y-auto divide-y divide-gray-100 dark:divide-gray-700/60 border border-gray-100 dark:border-gray-700 rounded-lg">
           {templateSummary.rules.map(rule => (
-            <li class="flex items-center justify-between gap-3 px-3 py-1.5 text-sm">
-              <span class="text-gray-600 dark:text-gray-300 truncate">{rule.label}</span>
-              <span class="shrink-0 text-gray-400 dark:text-gray-500">→ {rule.target}</span>
+            <li>
+              <label class="flex items-center justify-between gap-3 px-3 py-1.5 text-sm cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700/40">
+                <span class="flex items-center gap-2 min-w-0">
+                  <input type="checkbox" value={rule.id} x-model="templateIncludedRules" class="w-4 h-4 shrink-0 text-primary-600 rounded border-gray-300 focus:ring-primary-500 dark:bg-gray-700 dark:border-gray-600" />
+                  <span class="text-gray-600 dark:text-gray-300 truncate">{rule.label}</span>
+                </span>
+                <span class="shrink-0 text-gray-400 dark:text-gray-500">→ {rule.target}</span>
+              </label>
             </li>
           ))}
         </ul>

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildTemplateClashSections, generateTemplateSubconverterConfig, summarizeTemplate, validateTemplateLines } from '../src/config/ruleTemplate.js';
+import { buildTemplateClashSections, excludeTemplateRules, generateTemplateSubconverterConfig, summarizeTemplate, validateTemplateLines } from '../src/config/ruleTemplate.js';
 
 const PROXY_NAMES = ['🇭🇰 香港01', '🇯🇵 日本01', '🇺🇲 美国01', 'HK-Edge', 'US-Relay'];
 const PROVIDER_NAMES = ['provider-a', 'provider-b'];
@@ -471,17 +471,59 @@ describe('summarizeTemplate', () => {
         expect(summary.groups.find(group => group.name === 'Manual').filter).toBe('');
 
         expect(summary.rules).toEqual([
-            { target: 'Proxy', label: 'Google' },
-            { target: 'Proxy', label: 'OpenAi' },
-            { target: 'Direct', label: 'China' },
-            { target: 'Direct', label: 'GEOIP,CN' },
-            { target: 'Final', label: 'FINAL' }
+            { target: 'Proxy', label: 'Google', id: 'Proxy::Google' },
+            { target: 'Proxy', label: 'OpenAi', id: 'Proxy::OpenAi' },
+            { target: 'Direct', label: 'China', id: 'Direct::China' },
+            { target: 'Direct', label: 'GEOIP,CN', id: 'Direct::GEOIP,CN' },
+            { target: 'Final', label: 'FINAL', id: 'Final::FINAL' }
         ]);
     });
 
     it('returns empty sections for a template without lines', () => {
         expect(summarizeTemplate({})).toEqual({ groups: [], rules: [] });
         expect(summarizeTemplate(null)).toEqual({ groups: [], rules: [] });
+    });
+});
+
+describe('excludeTemplateRules', () => {
+    it('returns the same object when nothing is excluded', () => {
+        expect(excludeTemplateRules(MINI_TEMPLATE)).toBe(MINI_TEMPLATE);
+        expect(excludeTemplateRules(MINI_TEMPLATE, [])).toBe(MINI_TEMPLATE);
+    });
+
+    it('drops only the excluded ruleset lines', () => {
+        const filtered = excludeTemplateRules(MINI_TEMPLATE, ['Proxy::Google', 'Direct::GEOIP,CN']);
+
+        expect(filtered).not.toBe(MINI_TEMPLATE);
+        expect(filtered.subconverterLines).not.toContain('ruleset=Proxy,https://mini.test/lists/Google.list');
+        expect(filtered.subconverterLines).not.toContain('ruleset=Direct,[]GEOIP,CN');
+        expect(filtered.subconverterLines).toContain('ruleset=Proxy,https://mini.test/lists/OpenAi.list');
+
+        const sections = buildTemplateClashSections(filtered, { proxyNames: PROXY_NAMES });
+        expect(sections.rules).not.toContain('RULE-SET,Google,Proxy');
+        expect(sections.rules).not.toContain('GEOIP,CN,Direct');
+        expect(sections.rules).toContain('RULE-SET,OpenAi,Proxy');
+        expect(Object.keys(sections.ruleProviders)).not.toContain('Google');
+    });
+
+    it('keeps rule ids stable when the same list URL appears twice', () => {
+        const template = {
+            subconverterLines: [
+                'ruleset=Proxy,https://mini.test/lists/Google.list',
+                'ruleset=Direct,https://mini.test/lists/Google.list',
+                'custom_proxy_group=Proxy`select`[]DIRECT',
+                'custom_proxy_group=Direct`select`[]DIRECT'
+            ]
+        };
+        const ids = summarizeTemplate(template).rules.map(rule => rule.id);
+        expect(ids).toEqual(['Proxy::Google', 'Direct::Google-2']);
+
+        const filtered = excludeTemplateRules(template, ['Direct::Google-2']);
+        expect(filtered.subconverterLines).toEqual([
+            'ruleset=Proxy,https://mini.test/lists/Google.list',
+            'custom_proxy_group=Proxy`select`[]DIRECT',
+            'custom_proxy_group=Direct`select`[]DIRECT'
+        ]);
     });
 });
 

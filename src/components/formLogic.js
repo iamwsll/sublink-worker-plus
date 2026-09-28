@@ -108,6 +108,9 @@ export const formLogicFn = (t) => {
             // Non-empty while the admin default template owns generated rules; rule params
             // must then stay out of generated links or they would block the template.
             templateMode: '',
+            // Ids of the template rules kept enabled; links carry the complement as
+            // template_excluded_rules so an untouched form sends nothing.
+            templateIncludedRules: [],
             subconverterCopied: false,
             groupByCountry: false,
             includeAutoSelect: true,
@@ -196,6 +199,9 @@ export const formLogicFn = (t) => {
                     this.selectedPredefinedRule = 'custom';
                     this.selectedRules = [];
                     this.groupDefaults = {};
+                    this.templateIncludedRules = (window.ADMIN_TEMPLATE_RULES || [])
+                        .map(rule => rule.id)
+                        .filter(id => typeof id === 'string' && id);
                 }
                 this.clashRuleBase = localStorage.getItem('clashRuleBase') || '';                this.externalController = localStorage.getItem('externalController') || '';
                 this.externalUiDownloadUrl = localStorage.getItem('externalUiDownloadUrl') || '';
@@ -314,6 +320,14 @@ export const formLogicFn = (t) => {
                 return result;
             },
 
+            // Unknown ids (e.g. the admin edited the template after a link was saved) are
+            // dropped here so stale links cannot resurrect rules that no longer exist.
+            getTemplateExcludedRules() {
+                const allIds = (window.ADMIN_TEMPLATE_RULES || []).map(rule => rule.id);
+                const included = new Set(this.templateIncludedRules || []);
+                return allIds.filter(id => id && !included.has(id));
+            },
+
             addCustomRuleGroup() {
                 this.customRuleGroups.push({ name: '', urls: [''] });
             },
@@ -349,6 +363,15 @@ export const formLogicFn = (t) => {
                 const customRuleGroups = this.templateMode ? [] : this.getCustomRuleGroupsForPayload();
                 if (customRuleGroups.length > 0) {
                     params.append('customRuleGroups', JSON.stringify(customRuleGroups));
+                }
+
+                // In template mode the pickers are template rules: only the unchecked ids
+                // go on the link, so an untouched form stays byte-identical to before.
+                if (this.templateMode) {
+                    const excluded = this.getTemplateExcludedRules();
+                    if (excluded.length > 0) {
+                        params.append('template_excluded_rules', JSON.stringify(excluded));
+                    }
                 }
 
                 const groupDefaults = this.getGroupDefaultsForPayload();
@@ -804,6 +827,23 @@ export const formLogicFn = (t) => {
                 // Extract other parameters
                 this.groupByCountry = params.get('group_by_country') === 'true';
                 this.includeAutoSelect = params.get('include_auto_select') !== 'false';
+
+                // Template rule opt-outs only mean anything in template mode; stale ids are
+                // dropped by getTemplateExcludedRules the next time a link is generated.
+                const templateExcluded = this.templateMode ? params.get('template_excluded_rules') : null;
+                if (templateExcluded) {
+                    try {
+                        const parsed = JSON.parse(templateExcluded);
+                        if (Array.isArray(parsed)) {
+                            const excluded = new Set(parsed);
+                            this.templateIncludedRules = (window.ADMIN_TEMPLATE_RULES || [])
+                                .map(rule => rule.id)
+                                .filter(id => id && !excluded.has(id));
+                        }
+                    } catch (e) {
+                        console.warn('Failed to parse template_excluded_rules:', e);
+                    }
+                }
                 this.enableClashUI = params.get('enable_clash_ui') === 'true';
 
                 // Links carry udp explicitly, but an absent param maps to the server default (on).

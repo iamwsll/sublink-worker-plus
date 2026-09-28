@@ -549,11 +549,15 @@ describe('GET / landing page with admin config', () => {
         expect(html).toContain('My Template');
         // The rule picker section is server-rendered, so its change handlers must be absent.
         expect(html).not.toContain(`x-on:change="selectedPredefinedRule`);
-        // Instead the template's parsed groups and rules render read-only.
+        // Instead the template's parsed groups render, and its rules are selectable
+        // checkboxes whose unchecked ids ship as template_excluded_rules.
         expect(html).toContain('>Proxy<span');
         expect(html).toContain('>select</span>');
         expect(html).toContain('MyList');
         expect(html).toContain('→ Proxy');
+        expect(html).toContain('x-model="templateIncludedRules"');
+        expect(html).toContain('value="Proxy::MyList"');
+        expect(html).toContain('ADMIN_TEMPLATE_RULES = [{"target":"Proxy","label":"MyList","id":"Proxy::MyList"}]');
     });
 
     it('keeps the rule pickers when the default template is disabled', async () => {

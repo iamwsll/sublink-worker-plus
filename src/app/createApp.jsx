@@ -19,7 +19,7 @@ import { normalizeClashRuleBaseCacheTtl, resolveClashRuleBaseConfig } from '../s
 import { ServiceError, MissingDependencyError } from '../services/errors.js';
 import { normalizeRuntime } from '../runtime/runtimeConfig.js';
 import { PREDEFINED_RULE_SETS, SING_BOX_CONFIG, SING_BOX_CONFIG_V1_11, generateSubconverterConfig } from '../config/index.js';
-import { generateTemplateSubconverterConfig, summarizeTemplate } from '../config/ruleTemplate.js';
+import { excludeTemplateRules, generateTemplateSubconverterConfig, summarizeTemplate } from '../config/ruleTemplate.js';
 import { normalizeCustomRuleGroups } from '../utils/customRuleGroups.js';
 import { createAdminAuth } from './adminAuth.js';
 import { registerAdminRoutes } from './adminRoutes.js';
@@ -192,14 +192,14 @@ export function createApp(bindings = {}) {
 
             // A template owns the whole rule section, so it only applies when the caller did not
             // ask for any per-request rule customisation of their own.
-            const template = resolveTemplate(adminConfig, c, [
+            const template = applyTemplateExclusions(c, resolveTemplate(adminConfig, c, [
                 'selectedRules',
                 'customRules',
                 'customRuleGroups',
                 'clash_rule_base',
                 'clashRuleBase',
                 'configId'
-            ]);
+            ]));
 
             let baseConfig;
             if (configId?.startsWith('clash_')) {
@@ -312,7 +312,7 @@ export function createApp(bindings = {}) {
             // /subconverter has no configId/clash_rule_base override, so the template query or
             // the default template is the only entry point. Its base URLs are template
             // overrides, not rule customisation, so they do not block the default template.
-            const template = resolveTemplate(adminConfig, c, ['selectedRules', 'customRules', 'customRuleGroups']);
+            const template = applyTemplateExclusions(c, resolveTemplate(adminConfig, c, ['selectedRules', 'customRules', 'customRuleGroups']));
 
             if (template) {
                 const config = generateTemplateSubconverterConfig(template, {
@@ -661,6 +661,14 @@ function findDefaultTemplate(adminConfig) {
     return templates.find(item => item.enabled && item.isDefault) ||
         templates.find(item => item.enabled && item.id === adminConfig?.defaultRulePreset) ||
         null;
+}
+
+// template_excluded_rules opts individual template rules out without counting as rule
+// customisation, so it never blocks template resolution itself. Garbage in, template as-is.
+function applyTemplateExclusions(c, template) {
+    if (!template) return template;
+    const excluded = parseJsonArray(c.req.query('template_excluded_rules'));
+    return excluded ? excludeTemplateRules(template, excluded) : template;
 }
 
 // A template without its own base URL must still resolve: its embedded fallback config is

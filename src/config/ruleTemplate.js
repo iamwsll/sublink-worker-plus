@@ -318,21 +318,50 @@ export function summarizeTemplate(template) {
 	const usedNames = new Set();
 	const rules = [];
 	getRulesetLines(template).forEach((line, index) => {
-		const payload = line.slice(RULESET_PREFIX.length);
-		const commaIndex = payload.indexOf(',');
-		if (commaIndex === -1) return;
-		const target = payload.slice(0, commaIndex);
-		const source = payload.slice(commaIndex + 1);
-		if (!source) return;
-		// Inline rulesets read better without the [] marker; remote ones as their
-		// provider name so the row stays short regardless of URL length.
-		const label = source.startsWith('[]')
-			? source.slice(2)
-			: createRuleProviderName(source, usedNames, index);
-		rules.push({ target, label });
+		const parsed = parseRulesetLine(line, usedNames, index);
+		if (parsed) rules.push(parsed);
 	});
 
 	return { groups, rules };
+}
+
+// A rule's stable identity for per-request selection: target disambiguates inline
+// rules that repeat the same payload, and provider names are already deduped by
+// createRuleProviderName within one template.
+function makeRuleId(target, label) {
+	return `${target}::${label}`;
+}
+
+function parseRulesetLine(line, usedNames, index) {
+	const payload = line.slice(RULESET_PREFIX.length);
+	const commaIndex = payload.indexOf(',');
+	if (commaIndex === -1) return null;
+	const target = payload.slice(0, commaIndex);
+	const source = payload.slice(commaIndex + 1);
+	if (!source) return null;
+	// Inline rulesets read better without the [] marker; remote ones as their
+	// provider name so the row stays short regardless of URL length.
+	const label = source.startsWith('[]')
+		? source.slice(2)
+		: createRuleProviderName(source, usedNames, index);
+	return { target, label, id: makeRuleId(target, label) };
+}
+
+// Returns a copy of the template without the excluded rules, so every downstream
+// consumer (Clash compiler, subconverter INI pass-through) stays consistent.
+// Groups are untouched: a group with no rules left is still valid structure.
+export function excludeTemplateRules(template, excludedIds = []) {
+	const excluded = new Set(Array.isArray(excludedIds) ? excludedIds : []);
+	if (excluded.size === 0) return template;
+	const usedNames = new Set();
+	let index = 0;
+	const subconverterLines = getTemplateLines(template).filter(line => {
+		if (!line.startsWith(RULESET_PREFIX)) return true;
+		const parsed = parseRulesetLine(line, usedNames, index);
+		index += 1;
+		return !parsed || !excluded.has(parsed.id);
+	});
+	return { ...template, subconverterLines };
 }
 
 function normalizeConfigUrl(value, fallback) {
