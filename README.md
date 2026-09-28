@@ -35,6 +35,7 @@
 ### One-Click Deployment
 - Choose a "deploy" button above — both point at this repository
 - **Cloudflare Workers**: the button clones the repo into your account, auto-provisions the KV namespace, and deploys via Workers Builds. To enable the admin panel, add `ADMIN_PASSWORD` as a secret afterwards ( Workers → Settings → Variables ), or pre-fill it via the `.dev.vars.example` prompt during setup
+  - Already running the upstream sublink-worker? This fork deploys as `sublink-worker-plus`, so the two can coexist. In the button's KV dropdown you can either create a fresh namespace or pick your existing one to keep your old short links working
 - **Vercel**: fill in `KV_REST_API_URL` / `KV_REST_API_TOKEN`, and optionally `ADMIN_PASSWORD`
 - See the [Document](https://sublink.works/guide/quick-start/) for more information
 

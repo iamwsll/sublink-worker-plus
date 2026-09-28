@@ -5,13 +5,19 @@ const fs = require('fs');
 const path = require('path');
 
 const KV_NAMESPACE = 'SUBLINK_KV';
-const WORKER_NAME = 'sublink-worker'
+const WORKER_NAME = 'sublink-worker-plus'
 const KV_NAMESPACE_NAME = `${WORKER_NAME}-${KV_NAMESPACE}`;
-const LEGACY_KV_NAMESPACE_NAME = `${WORKER_NAME}-${WORKER_NAME}-${KV_NAMESPACE}`;  // 历史遗留的命名空间名称
+// Upstream deployments of the original sublink-worker used these titles; keeping them
+// in the lookup list lets a manual deploy reuse an existing namespace (and its short
+// links) instead of silently creating a second one.
+const UPSTREAM_KV_NAMESPACE_NAMES = [
+  'sublink-worker-SUBLINK_KV',
+  'sublink-worker-sublink-worker-SUBLINK_KV',  // 历史遗留的命名空间名称
+];
 const FALLBACK_KV_NAMESPACE_NAME = KV_NAMESPACE; // 早期账号里只叫 SUBLINK_KV
 const SUPPORTED_TITLES = [
   KV_NAMESPACE_NAME,
-  LEGACY_KV_NAMESPACE_NAME,
+  ...UPSTREAM_KV_NAMESPACE_NAMES,
   FALLBACK_KV_NAMESPACE_NAME
 ];
 const WRANGLER_CONFIG_PATH = path.join(__dirname, '..', 'wrangler.toml');
