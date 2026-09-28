@@ -48,6 +48,17 @@ function getClashUdpValue(proxy, defaultEnabled = true) {
     return defaultEnabled;
 }
 
+function buildClashRealityOptions(reality) {
+    if (!reality?.enabled) return undefined;
+    return {
+        'public-key': reality.public_key,
+        'short-id': reality.short_id,
+        ...(typeof reality.support_x25519mlkem768 === 'boolean'
+            ? { 'support-x25519mlkem768': reality.support_x25519mlkem768 }
+            : {})
+    };
+}
+
 export class ClashConfigBuilder extends BaseConfigBuilder {
     constructor(inputString, selectedRules, customRules, baseConfig, lang, userAgent, groupByCountry = false, enableClashUI = false, externalController, externalUiDownloadUrl, includeAutoSelect = true, groupDefaults = {}, forceUdp = undefined, customRuleGroups = []) {
         if (!baseConfig) {
@@ -206,10 +217,7 @@ export class ClashConfigBuilder extends BaseConfigBuilder {
                         path: proxy.transport.path,
                         headers: proxy.transport.headers
                     } : undefined,
-                    'reality-opts': proxy.tls?.reality?.enabled ? {
-                        'public-key': proxy.tls.reality.public_key,
-                        'short-id': proxy.tls.reality.short_id,
-                    } : undefined,
+                    'reality-opts': buildClashRealityOptions(proxy.tls?.reality),
                     'grpc-opts': proxy.transport?.type === 'grpc' ? {
                         'grpc-service-name': proxy.transport.service_name,
                     } : undefined,
@@ -256,10 +264,7 @@ export class ClashConfigBuilder extends BaseConfigBuilder {
                         path: proxy.transport.path,
                         headers: proxy.transport.headers
                     } : undefined,
-                    'reality-opts': proxy.tls?.reality?.enabled ? {
-                        'public-key': proxy.tls.reality.public_key,
-                        'short-id': proxy.tls.reality.short_id,
-                    } : undefined,
+                    'reality-opts': buildClashRealityOptions(proxy.tls?.reality),
                     'grpc-opts': proxy.transport?.type === 'grpc' ? {
                         'grpc-service-name': proxy.transport.service_name,
                     } : undefined,
