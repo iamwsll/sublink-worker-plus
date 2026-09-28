@@ -1,9 +1,5 @@
 import { normalizeCustomRuleGroups } from '../utils/customRuleGroups.js';
 import { InvalidConfigError } from './errors.js';
-import {
-    DEFAULT_CLASH_RULE_BASE_CACHE_TTL_SECONDS,
-    normalizeClashRuleBaseCacheTtl
-} from './clashRuleBaseCache.js';
 
 export const ADMIN_CONFIG_KEY = 'admin:config';
 export const ADMIN_CONFIG_VERSION = 1;
@@ -14,10 +10,6 @@ export const DEFAULT_ADMIN_CONFIG = deepFreeze({
     defaultRulePreset: 'balanced',
     customRuleSets: [],
     groupDefaults: {},
-    clashRuleBase: {
-        url: '',
-        cacheTtlSeconds: DEFAULT_CLASH_RULE_BASE_CACHE_TTL_SECONDS
-    },
     templates: []
 });
 
@@ -32,8 +24,7 @@ const TEMPLATE_ID_PATTERN = /^[a-z0-9][a-z0-9-]{0,40}$/;
 const CONTAINER_FIELDS = [
     ['customRuleSets', 'array'],
     ['templates', 'array'],
-    ['groupDefaults', 'object'],
-    ['clashRuleBase', 'object']
+    ['groupDefaults', 'object']
 ];
 
 /**
@@ -51,7 +42,6 @@ export function normalizeAdminConfig(raw) {
         defaultRulePreset: normalizeDefaultRulePreset(source.defaultRulePreset),
         customRuleSets: normalizeCustomRuleSets(source.customRuleSets),
         groupDefaults: normalizeGroupDefaults(source.groupDefaults),
-        clashRuleBase: normalizeClashRuleBase(source.clashRuleBase),
         templates: normalizeTemplates(source.templates)
     };
 }
@@ -157,15 +147,6 @@ function normalizeGroupDefaults(value) {
         result[name] = option;
     }
     return result;
-}
-
-function normalizeClashRuleBase(value) {
-    const source = isPlainObject(value) ? value : {};
-    return {
-        url: normalizeOptionalHttpUrl(source.url),
-        // Shares the cache clamp with the fetch path so both agree on 0 = caching disabled.
-        cacheTtlSeconds: normalizeClashRuleBaseCacheTtl(source.cacheTtlSeconds)
-    };
 }
 
 function normalizeTemplates(value) {

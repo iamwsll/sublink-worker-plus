@@ -50,8 +50,6 @@ export const adminLogicFn = (t) => {
             defaultRulePreset: 'balanced',
             ruleSets: [],
             groupDefaultRows: [],
-            clashRuleBaseUrl: '',
-            clashRuleBaseTtl: 600,
             templates: [],
 
             async init() {
@@ -113,14 +111,9 @@ export const adminLogicFn = (t) => {
 
             applyConfig(config) {
                 const source = isPlainObject(config) ? config : {};
-                const clashRuleBase = isPlainObject(source.clashRuleBase) ? source.clashRuleBase : {};
                 const preset = trimString(source.defaultRulePreset) || 'balanced';
 
                 this.configVersion = Number.isFinite(Number(source.version)) ? Number(source.version) : 1;
-                this.clashRuleBaseUrl = trimString(clashRuleBase.url);
-                this.clashRuleBaseTtl = Number.isFinite(Number(clashRuleBase.cacheTtlSeconds))
-                    ? Number(clashRuleBase.cacheTtlSeconds)
-                    : 600;
 
                 this.ruleSets = (Array.isArray(source.customRuleSets) ? source.customRuleSets : []).map((ruleSet) => {
                     const item = isPlainObject(ruleSet) ? ruleSet : {};
@@ -274,11 +267,6 @@ export const adminLogicFn = (t) => {
                             }))
                             .filter((ruleSet) => ruleSet.name),
                         groupDefaults: groupDefaults,
-                        // The storage layer owns the TTL clamp, so the raw number is passed through
-                        clashRuleBase: {
-                            url: trimString(this.clashRuleBaseUrl),
-                            cacheTtlSeconds: Number(this.clashRuleBaseTtl) || 0
-                        },
                         templates: templates
                     }
                 };

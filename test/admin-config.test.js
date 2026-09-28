@@ -23,25 +23,24 @@ describe('DEFAULT_ADMIN_CONFIG', () => {
             defaultRulePreset: 'balanced',
             customRuleSets: [],
             groupDefaults: {},
-            clashRuleBase: { url: '', cacheTtlSeconds: 600 },
             templates: []
         });
     });
 
     it('is deeply frozen so callers cannot mutate the shared default', () => {
         expect(Object.isFrozen(DEFAULT_ADMIN_CONFIG)).toBe(true);
-        expect(Object.isFrozen(DEFAULT_ADMIN_CONFIG.clashRuleBase)).toBe(true);
+        expect(Object.isFrozen(DEFAULT_ADMIN_CONFIG.templates)).toBe(true);
     });
 
     it('is returned as an independent copy', async () => {
         const service = await freshMemoryService();
         const first = await service.getConfig();
         first.templates.push({ id: 'mutated' });
-        first.clashRuleBase.url = 'https://mutated.test/x.yml';
+        first.groupDefaults.Google = 'DIRECT';
 
         const second = await service.getConfig();
         expect(second.templates).toEqual([]);
-        expect(second.clashRuleBase.url).toBe('');
+        expect(second.groupDefaults).toEqual({});
     });
 });
 
@@ -129,47 +128,6 @@ describe('normalizeAdminConfig', () => {
         it('returns an empty object for non-objects', () => {
             expect(normalizeAdminConfig({ groupDefaults: [] }).groupDefaults).toEqual({});
             expect(normalizeAdminConfig({ groupDefaults: 'x' }).groupDefaults).toEqual({});
-        });
-    });
-
-    describe('clashRuleBase', () => {
-        it('rejects non-http(s), relative, malformed and newline-bearing URLs', () => {
-            const rejected = [
-                'ftp://files.test/a.yml',
-                'file:///etc/passwd',
-                'javascript:alert(1)',
-                '/relative/path.yml',
-                'not a url',
-                'https://a.test/x.yml\nX-Injected: 1',
-                'https://a.test/x.yml\r\nX-Injected: 1',
-                '   ',
-                42,
-                null
-            ];
-
-            for (const bad of rejected) {
-                expect(normalizeAdminConfig({ clashRuleBase: { url: bad } }).clashRuleBase.url).toBe('');
-            }
-        });
-
-        it('keeps http(s) URLs with surrounding whitespace trimmed', () => {
-            expect(normalizeAdminConfig({ clashRuleBase: { url: '  https://a.test/x.yml  ' } }).clashRuleBase.url)
-                .toBe('https://a.test/x.yml');
-            expect(normalizeAdminConfig({ clashRuleBase: { url: 'http://a.test/x.yml' } }).clashRuleBase.url)
-                .toBe('http://a.test/x.yml');
-        });
-
-        it('shares the cache TTL clamp with the fetch path', () => {
-            expect(normalizeAdminConfig({ clashRuleBase: { cacheTtlSeconds: '99999' } }).clashRuleBase.cacheTtlSeconds).toBe(86400);
-            expect(normalizeAdminConfig({ clashRuleBase: { cacheTtlSeconds: -5 } }).clashRuleBase.cacheTtlSeconds).toBe(600);
-            expect(normalizeAdminConfig({ clashRuleBase: { cacheTtlSeconds: 'junk' } }).clashRuleBase.cacheTtlSeconds).toBe(600);
-            expect(normalizeAdminConfig({ clashRuleBase: { cacheTtlSeconds: 0 } }).clashRuleBase.cacheTtlSeconds).toBe(0);
-            expect(normalizeAdminConfig({ clashRuleBase: { cacheTtlSeconds: 120 } }).clashRuleBase.cacheTtlSeconds).toBe(120);
-        });
-
-        it('returns defaults for non-objects', () => {
-            expect(normalizeAdminConfig({ clashRuleBase: [] }).clashRuleBase).toEqual({ url: '', cacheTtlSeconds: 600 });
-            expect(normalizeAdminConfig({ clashRuleBase: 'x' }).clashRuleBase).toEqual({ url: '', cacheTtlSeconds: 600 });
         });
     });
 
@@ -315,9 +273,7 @@ describe('AdminConfigService.saveConfig', () => {
             { templates: 'x' },
             { templates: {} },
             { groupDefaults: [] },
-            { groupDefaults: 'x' },
-            { clashRuleBase: [] },
-            { clashRuleBase: 'x' }
+            { groupDefaults: 'x' }
         ];
 
         for (const bad of rejected) {
@@ -333,11 +289,11 @@ describe('AdminConfigService.saveConfig', () => {
 
     it('returns the normalized config', async () => {
         const service = new AdminConfigService(new MemoryKVAdapter());
-        const saved = await service.saveConfig({ defaultRulePreset: '  minimal  ', clashRuleBase: { url: 'https://a.test/x.yml' } });
+        const saved = await service.saveConfig({ defaultRulePreset: '  minimal  ', groupDefaults: { Google: 'DIRECT' } });
 
         expect(saved.version).toBe(ADMIN_CONFIG_VERSION);
         expect(saved.defaultRulePreset).toBe('minimal');
-        expect(saved.clashRuleBase).toEqual({ url: 'https://a.test/x.yml', cacheTtlSeconds: 600 });
+        expect(saved.groupDefaults).toEqual({ Google: 'DIRECT' });
     });
 });
 
@@ -371,7 +327,6 @@ describe('AdminConfigService KV round trip', () => {
             ...DEFAULT_ADMIN_CONFIG,
             groupDefaults: { A: 'DIRECT' }
         });
-        expect(config.clashRuleBase).toEqual({ url: '', cacheTtlSeconds: 600 });
         expect(config.templates).toEqual([]);
         expect(config.customRuleSets).toEqual([]);
     });

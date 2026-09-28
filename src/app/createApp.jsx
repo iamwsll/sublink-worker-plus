@@ -177,9 +177,9 @@ export function createApp(bindings = {}) {
             const lang = c.get('lang');
 
             const clashRuleBase = c.req.query('clash_rule_base') || c.req.query('clashRuleBase');
-            // TTL precedence: per-request query > admin panel setting > runtime default.
+            // TTL precedence: per-request query > runtime default (env).
             const clashRuleBaseCacheTtl = normalizeClashRuleBaseCacheTtl(
-                c.req.query('clash_rule_base_ttl') ?? c.req.query('clashRuleBaseTtl') ?? adminConfig?.clashRuleBase?.cacheTtlSeconds,
+                c.req.query('clash_rule_base_ttl') ?? c.req.query('clashRuleBaseTtl'),
                 runtime.config.clashRuleBaseCacheTtlSeconds
             );
             const refreshClashRuleBase = parseBooleanFlag(c.req.query('clash_rule_base_refresh')) ||
@@ -214,17 +214,6 @@ export function createApp(bindings = {}) {
             } else if (template) {
                 baseConfig = await resolveTemplateClashRuleBase({
                     template,
-                    userAgent: ua,
-                    kv: runtime.kv,
-                    cacheTtlSeconds: clashRuleBaseCacheTtl,
-                    refresh: refreshClashRuleBase,
-                    logger: runtime.logger
-                });
-            } else if (adminConfig?.clashRuleBase?.url) {
-                // The admin panel's remote base config is the lowest-precedence source:
-                // it only applies when neither the request nor a template brought its own.
-                baseConfig = await resolveClashRuleBaseConfig({
-                    url: adminConfig.clashRuleBase.url,
                     userAgent: ua,
                     kv: runtime.kv,
                     cacheTtlSeconds: clashRuleBaseCacheTtl,

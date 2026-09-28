@@ -293,7 +293,6 @@ describe('GET /admin/api/config', () => {
             defaultRulePreset: 'balanced',
             customRuleSets: [],
             groupDefaults: {},
-            clashRuleBase: { url: '', cacheTtlSeconds: 600 },
             templates: []
         });
     });
@@ -308,7 +307,7 @@ describe('GET /admin/api/config', () => {
         const config = await res.json();
 
         expect(config.defaultRulePreset).toBe('comprehensive');
-        expect(config.clashRuleBase).toEqual({ url: '', cacheTtlSeconds: 600 });
+        expect(config.templates).toEqual([]);
     });
 });
 
@@ -336,8 +335,7 @@ describe('PUT /admin/api/config', () => {
             [{ customRuleSets: {} }, 'customRuleSets'],
             [{ customRuleSets: 'x' }, 'customRuleSets'],
             [{ templates: {} }, 'templates'],
-            [{ groupDefaults: [] }, 'groupDefaults'],
-            [{ clashRuleBase: [] }, 'clashRuleBase']
+            [{ groupDefaults: [] }, 'groupDefaults']
         ];
 
         for (const [payload, field] of rejected) {
@@ -363,7 +361,6 @@ describe('PUT /admin/api/config', () => {
                 defaultRulePreset: '  minimal  ',
                 customRuleSets: [{ name: '  Admin Group  ', urls: ['  https://admin.test/a.list  '] }],
                 groupDefaults: { 'Google': 'DIRECT', 'Broken': 42 },
-                clashRuleBase: { url: 'https://admin.test/base.yml', cacheTtlSeconds: 120 },
                 templates: [{ id: 'admin-tpl', name: 'Admin Template' }]
             })
         });
@@ -376,7 +373,6 @@ describe('PUT /admin/api/config', () => {
             { name: 'Admin Group', urls: ['https://admin.test/a.list'], defaultOption: '' }
         ]);
         expect(body.config.groupDefaults).toEqual({ Google: 'DIRECT' });
-        expect(body.config.clashRuleBase).toEqual({ url: 'https://admin.test/base.yml', cacheTtlSeconds: 120 });
         expect(body.config.templates.map(t => t.id)).toEqual(['admin-tpl']);
 
         const stored = JSON.parse(await kv.get(ADMIN_CONFIG_KEY));

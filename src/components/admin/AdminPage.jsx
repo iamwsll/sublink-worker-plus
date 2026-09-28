@@ -305,29 +305,6 @@ export const AdminPage = (props) => {
           </div>
         </div>
 
-        {/* Clash remote base config */}
-        <div class={CARD_CLASS}>
-          <SectionHeading icon="fa-cloud-download-alt" title={t('adminClashBaseSection')} />
-          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label class={LABEL_CLASS}>{t('adminClashBaseUrl')}</label>
-              <input type="text" x-model="clashRuleBaseUrl" class={INPUT_CLASS} placeholder="https://example.com/base.yml" />
-            </div>
-            <div>
-              <label class={LABEL_CLASS}>{t('adminClashBaseTtl')}</label>
-              {/* why: dotted Alpine modifiers are not valid JSX attribute names, so they spread in */}
-              <input
-                type="number"
-                min="0"
-                max="86400"
-                step="1"
-                class={INPUT_CLASS}
-                {...{ 'x-model.number': 'clashRuleBaseTtl' }}
-              />
-            </div>
-          </div>
-        </div>
-
         {/* Rule templates */}
         <div class={CARD_CLASS}>
           <SectionHeading icon="fa-file-code" title={t('adminTemplatesSection')} hint={t('adminTemplatesHint')} />

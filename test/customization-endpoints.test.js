@@ -428,23 +428,6 @@ describe('/clash clash_rule_base', () => {
         expect(res.status).toBe(400);
         expect(fetchMock).not.toHaveBeenCalled();
     });
-
-    it('uses the stored admin clashRuleBase url on /clash as the lowest-precedence base', async () => {
-        const kv = new MemoryKVAdapter();
-        await seedAdminConfig(kv, { clashRuleBase: { url: 'https://admin.test/base.yml', cacheTtlSeconds: 0 } });
-        const fetchMock = stubFetchYaml('mode: global\nmixed-port: 7777\n');
-        const app = createTestApp({ kv });
-
-        const res = await app.request(url('/clash', { config: SS_NODES }));
-
-        expect(res.status).toBe(200);
-        expect(fetchMock).toHaveBeenCalledTimes(1);
-        expect(String(fetchMock.mock.calls[0][0])).toBe('https://admin.test/base.yml');
-        const config = parseClash(await res.text());
-        // The admin base config merges in, while proxies/rules still come from the subscription.
-        expect(config['mixed-port']).toBe(7777);
-        expect(config.proxies.length).toBeGreaterThan(0);
-    });
 });
 
 describe('/clash templates', () => {

@@ -49,7 +49,7 @@
 
 Everything upstream has, plus:
 
-- **🛠️ Unified Admin Panel** (`/admin`) — change server-side defaults without a redeploy: default rule preset, global custom rule sets, policy-group defaults, remote Clash base config, and rule templates. One `ADMIN_PASSWORD` env var turns it on
+- **🛠️ Unified Admin Panel** (`/admin`) — change server-side defaults without a redeploy: default rule preset, global custom rule sets, policy-group defaults, and rule templates. One `ADMIN_PASSWORD` env var turns it on
 - **📋 Rule Templates** — paste subconverter INI lines (`ruleset=` / `custom_proxy_group=`) and fully own the generated Clash rules and policy groups; switch templates per request with `?template=<id>`
 - **🧩 Custom Rule Groups everywhere** — point any rule group at your own remote rule lists via `customRuleGroups`, on all four builder endpoints
 - **🎛️ Policy-group defaults** — decide which option each selector starts on (e.g. Bilibili → DIRECT) with `group_defaults` or the admin panel
@@ -86,8 +86,7 @@ Set the `ADMIN_PASSWORD` environment variable and open `/admin` — a unified we
 | General | Default rule preset used when a request carries no `selectedRules` |
 | Custom rule sets | Server-side rule groups (`name` + rule-list URLs + optional default option). They appear as extra options on the home page and can be referenced by `selectedRules` |
 | Group defaults | Preferred default option per policy group (e.g. `Bilibili → DIRECT`) |
-| Clash base config | Remote Clash YAML used as the `/clash` base config, with adjustable cache TTL |
-| Rule templates | subconverter INI lines (`ruleset=` / `custom_proxy_group=`) that fully own the Clash rules/proxy-groups/rules output; one template can be marked as default |
+| Rule templates | subconverter INI lines (`ruleset=` / `custom_proxy_group=`) that fully own the Clash rules/proxy-groups/rules output, plus the template's own Clash/Quantumult X base config URL; one template can be marked as default |
 
 ### Rule Templates
 
