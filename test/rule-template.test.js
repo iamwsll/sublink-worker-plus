@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildTemplateClashSections, generateTemplateSubconverterConfig, validateTemplateLines } from '../src/config/ruleTemplate.js';
+import { buildTemplateClashSections, generateTemplateSubconverterConfig, summarizeTemplate, validateTemplateLines } from '../src/config/ruleTemplate.js';
 
 const PROXY_NAMES = ['🇭🇰 香港01', '🇯🇵 日本01', '🇺🇲 美国01', 'HK-Edge', 'US-Relay'];
 const PROVIDER_NAMES = ['provider-a', 'provider-b'];
@@ -457,6 +457,34 @@ describe('generateTemplateSubconverterConfig', () => {
         expect(lines.at(-1)).toBe(';luck');
     });
 });
+describe('summarizeTemplate', () => {
+    it('lists defined groups and rules without any proxy names', () => {
+        const summary = summarizeTemplate(MINI_TEMPLATE);
+
+        // The omitted group never appears; malformed member-less groups still list.
+        const names = summary.groups.map(group => group.name);
+        expect(names).toEqual(['Auto', 'Manual', 'Pick', 'Proxy', 'Direct', 'Final', 'Empty']);
+        expect(summary.groups.find(group => group.name === 'Auto')).toMatchObject({
+            type: 'url-test',
+            filter: '(HK|US)'
+        });
+        expect(summary.groups.find(group => group.name === 'Manual').filter).toBe('');
+
+        expect(summary.rules).toEqual([
+            { target: 'Proxy', label: 'Google' },
+            { target: 'Proxy', label: 'OpenAi' },
+            { target: 'Direct', label: 'China' },
+            { target: 'Direct', label: 'GEOIP,CN' },
+            { target: 'Final', label: 'FINAL' }
+        ]);
+    });
+
+    it('returns empty sections for a template without lines', () => {
+        expect(summarizeTemplate({})).toEqual({ groups: [], rules: [] });
+        expect(summarizeTemplate(null)).toEqual({ groups: [], rules: [] });
+    });
+});
+
 describe('validateTemplateLines', () => {
     it('accepts a self-consistent template', () => {
         expect(validateTemplateLines(COMPLEX_TEMPLATE.subconverterLines, COMPLEX_TEMPLATE.omittedGroups)).toEqual([]);

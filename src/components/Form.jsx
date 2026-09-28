@@ -25,6 +25,7 @@ export const Form = (props) => {
   // A default template owns the whole rule section of generated configs; while one is active
   // the rule pickers are replaced by a notice and the links must not carry selectedRules.
   const defaultTemplateName = adminConfig?.defaultTemplateName || '';
+  const templateSummary = adminConfig?.defaultTemplateSummary || null;
 
   const translations = {
     processing: t('processing'),
@@ -157,6 +158,32 @@ export const Form = (props) => {
         <i class="fas fa-file-export"></i>
         {defaultTemplateName}
       </p>
+      {templateSummary && templateSummary.groups.length > 0 && (
+      <div class="mt-5">
+        <h4 class="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">{t('templateSummaryGroups')}</h4>
+        <div class="flex flex-wrap gap-2">
+          {templateSummary.groups.map(group => (
+            <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-gray-100 dark:bg-gray-700 text-sm text-gray-700 dark:text-gray-200" title={group.filter || undefined}>
+              {group.name}
+              <span class="text-xs text-gray-400 dark:text-gray-500">{group.type}</span>
+            </span>
+          ))}
+        </div>
+      </div>
+      )}
+      {templateSummary && templateSummary.rules.length > 0 && (
+      <div class="mt-4">
+        <h4 class="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">{t('templateSummaryRules')}</h4>
+        <ul class="max-h-48 overflow-y-auto divide-y divide-gray-100 dark:divide-gray-700/60 border border-gray-100 dark:border-gray-700 rounded-lg">
+          {templateSummary.rules.map(rule => (
+            <li class="flex items-center justify-between gap-3 px-3 py-1.5 text-sm">
+              <span class="text-gray-600 dark:text-gray-300 truncate">{rule.label}</span>
+              <span class="shrink-0 text-gray-400 dark:text-gray-500">→ {rule.target}</span>
+            </li>
+          ))}
+        </ul>
+      </div>
+      )}
     </div>
     ) : (
     <>

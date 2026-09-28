@@ -19,7 +19,7 @@ import { normalizeClashRuleBaseCacheTtl, resolveClashRuleBaseConfig } from '../s
 import { ServiceError, MissingDependencyError } from '../services/errors.js';
 import { normalizeRuntime } from '../runtime/runtimeConfig.js';
 import { PREDEFINED_RULE_SETS, SING_BOX_CONFIG, SING_BOX_CONFIG_V1_11, generateSubconverterConfig } from '../config/index.js';
-import { generateTemplateSubconverterConfig } from '../config/ruleTemplate.js';
+import { generateTemplateSubconverterConfig, summarizeTemplate } from '../config/ruleTemplate.js';
 import { normalizeCustomRuleGroups } from '../utils/customRuleGroups.js';
 import { createAdminAuth } from './adminAuth.js';
 import { registerAdminRoutes } from './adminRoutes.js';
@@ -56,6 +56,7 @@ export function createApp(bindings = {}) {
         // The form pre-fills admin-defined rule sets, so a broken admin config must degrade
         // to an empty one rather than breaking the landing page.
         const storedConfig = await loadAdminConfig(services.adminConfig, runtime.logger);
+        const defaultTemplate = storedConfig ? findDefaultTemplate(storedConfig) : null;
         const adminConfig = storedConfig
             ? {
                 customRuleSets: storedConfig.customRuleSets,
@@ -63,7 +64,10 @@ export function createApp(bindings = {}) {
                 defaultRulePreset: storedConfig.defaultRulePreset,
                 // A default template owns the generated rule section, so the form must hide
                 // its rule pickers instead of emitting selectedRules that would block it.
-                defaultTemplateName: findDefaultTemplateName(storedConfig)
+                defaultTemplateName: defaultTemplate?.name || '',
+                // Parsed statically (no user nodes yet) so visitors see which groups and
+                // rules the fixed template provides, not just its name.
+                defaultTemplateSummary: defaultTemplate ? summarizeTemplate(defaultTemplate) : null
             }
             : null;
 
@@ -651,12 +655,12 @@ function resolveTemplate(adminConfig, c, treatAsCustomization) {
 }
 
 // Mirrors the implicit-template branch of resolveTemplate for the landing page, where no
-// query parameters exist yet; only the display name is needed for the notice banner.
-function findDefaultTemplateName(adminConfig) {
+// query parameters exist yet.
+function findDefaultTemplate(adminConfig) {
     const templates = Array.isArray(adminConfig?.templates) ? adminConfig.templates : [];
-    const template = templates.find(item => item.enabled && item.isDefault) ||
-        templates.find(item => item.enabled && item.id === adminConfig?.defaultRulePreset);
-    return template?.name || '';
+    return templates.find(item => item.enabled && item.isDefault) ||
+        templates.find(item => item.enabled && item.id === adminConfig?.defaultRulePreset) ||
+        null;
 }
 
 // A template without its own base URL must still resolve: its embedded fallback config is

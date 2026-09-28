@@ -296,6 +296,45 @@ export function buildTemplateClashSections(template, options) {
 	};
 }
 
+// Node-independent view of a template for UI display: the groups and rules it
+// defines before any proxy names are matched, so the homepage can show what a
+// fixed template contains instead of a bare "template applied" notice.
+export function summarizeTemplate(template) {
+	const omittedGroups = getOmittedGroups(template);
+
+	const groups = getProxyGroupLines(template).map(line => {
+		const payload = line.slice(PROXY_GROUP_PREFIX.length);
+		const [name, type, ...parts] = payload.split('`');
+		if (!name || !type) return null;
+		if (omittedGroups.has(name)) return null;
+		return {
+			name,
+			type,
+			// url-test groups match by pattern; other groups list members explicitly.
+			filter: type === 'url-test' ? (parts[0] || '.*') : ''
+		};
+	}).filter(Boolean);
+
+	const usedNames = new Set();
+	const rules = [];
+	getRulesetLines(template).forEach((line, index) => {
+		const payload = line.slice(RULESET_PREFIX.length);
+		const commaIndex = payload.indexOf(',');
+		if (commaIndex === -1) return;
+		const target = payload.slice(0, commaIndex);
+		const source = payload.slice(commaIndex + 1);
+		if (!source) return;
+		// Inline rulesets read better without the [] marker; remote ones as their
+		// provider name so the row stays short regardless of URL length.
+		const label = source.startsWith('[]')
+			? source.slice(2)
+			: createRuleProviderName(source, usedNames, index);
+		rules.push({ target, label });
+	});
+
+	return { groups, rules };
+}
+
 function normalizeConfigUrl(value, fallback) {
 	if (typeof value !== 'string') return fallback;
 	const trimmed = value.trim();

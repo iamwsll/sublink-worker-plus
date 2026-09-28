@@ -535,7 +535,10 @@ describe('GET / landing page with admin config', () => {
                 name: 'My Template',
                 enabled: true,
                 isDefault: true,
-                subconverterLines: ['ruleset=Proxy,https://t.test/a.list']
+                subconverterLines: [
+                    'ruleset=Proxy,https://t.test/MyList.list',
+                    'custom_proxy_group=Proxy`select`[]DIRECT'
+                ]
             }]
         }));
         const app = createTestApp({ kv });
@@ -546,6 +549,11 @@ describe('GET / landing page with admin config', () => {
         expect(html).toContain('My Template');
         // The rule picker section is server-rendered, so its change handlers must be absent.
         expect(html).not.toContain(`x-on:change="selectedPredefinedRule`);
+        // Instead the template's parsed groups and rules render read-only.
+        expect(html).toContain('>Proxy<span');
+        expect(html).toContain('>select</span>');
+        expect(html).toContain('MyList');
+        expect(html).toContain('→ Proxy');
     });
 
     it('keeps the rule pickers when the default template is disabled', async () => {
