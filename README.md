@@ -51,7 +51,8 @@
 Everything upstream has, plus:
 
 - **🛠️ Unified Admin Panel** (`/admin`) — change server-side defaults without a redeploy: default rule preset, global custom rule sets, policy-group defaults, and rule templates. One `ADMIN_PASSWORD` env var turns it on
-- **📋 Rule Templates** — paste subconverter INI lines (`ruleset=` / `custom_proxy_group=`) and fully own the generated Clash rules and policy groups; switch templates per request with `?template=<id>`
+- **📋 Rule Templates** — paste subconverter INI lines (`ruleset=` / `custom_proxy_group=`) and fully own the generated rules and policy groups of **Clash, sing-box and Surge** at once (sing-box rule lists are converted on the fly via the built-in `/ruleset/singbox` endpoint). Switch templates per request with `?template=<id>`, and let visitors opt individual template rules out with `template_excluded_rules`
+- **🔐 REALITY ML-KEM preserved** — the mihomo `support-x25519mlkem768` option survives conversion in both directions (VLESS URI and Clash YAML input → Clash output), including explicit `false`
 - **🧩 Custom Rule Groups everywhere** — point any rule group at your own remote rule lists via `customRuleGroups`, on all four builder endpoints
 - **🎛️ Policy-group defaults** — decide which option each selector starts on (e.g. Bilibili → DIRECT) with `group_defaults` or the admin panel
 - **🌐 Remote Clash base config** — `clash_rule_base` merges any hosted Clash YAML as the base config, cached in KV with TTL/refresh controls

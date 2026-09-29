@@ -23,7 +23,7 @@ describe('Worker', () => {
         expect(res.status).toBe(200);
         expect(res.headers.get('content-type')).toContain('text/html');
         const text = await res.text();
-        expect(text).toContain('Sublink Worker');
+        expect(text).toContain('Sublink Worker Plus');
     });
 
     it('GET /singbox returns JSON', async () => {
