@@ -109,7 +109,7 @@ export const adminLogicFn = (t) => {
                 const updateHours = Number(source.profileUpdateIntervalHours);
 
                 this.configVersion = Number.isFinite(Number(source.version)) ? Number(source.version) : 1;
-                this.profileUpdateIntervalHours = Number.isFinite(updateHours) && updateHours >= 1 && updateHours <= 168
+                this.profileUpdateIntervalHours = Number.isFinite(updateHours) && updateHours >= 1
                     ? Math.trunc(updateHours)
                     : 24;
 
@@ -237,7 +237,7 @@ export const adminLogicFn = (t) => {
                         version: this.configVersion,
                         defaultRulePreset: trimString(this.defaultRulePreset) || 'balanced',
                         profileUpdateIntervalHours: Number.isFinite(Number(this.profileUpdateIntervalHours))
-                            ? Math.min(168, Math.max(1, Math.trunc(Number(this.profileUpdateIntervalHours))))
+                            ? Math.max(1, Math.trunc(Number(this.profileUpdateIntervalHours)))
                             : 24,
                         customRuleSets: this.ruleSets
                             .map((ruleSet) => ({
