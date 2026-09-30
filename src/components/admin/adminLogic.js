@@ -48,6 +48,7 @@ export const adminLogicFn = (t) => {
 
             configVersion: 1,
             defaultRulePreset: 'balanced',
+            profileUpdateIntervalHours: 24,
             ruleSets: [],
             groupDefaultRows: [],
             templates: [],
@@ -105,8 +106,12 @@ export const adminLogicFn = (t) => {
             applyConfig(config) {
                 const source = isPlainObject(config) ? config : {};
                 const preset = trimString(source.defaultRulePreset) || 'balanced';
+                const updateHours = Number(source.profileUpdateIntervalHours);
 
                 this.configVersion = Number.isFinite(Number(source.version)) ? Number(source.version) : 1;
+                this.profileUpdateIntervalHours = Number.isFinite(updateHours) && updateHours >= 1 && updateHours <= 168
+                    ? Math.trunc(updateHours)
+                    : 24;
 
                 this.ruleSets = (Array.isArray(source.customRuleSets) ? source.customRuleSets : []).map((ruleSet) => {
                     const item = isPlainObject(ruleSet) ? ruleSet : {};
@@ -231,6 +236,9 @@ export const adminLogicFn = (t) => {
                     config: {
                         version: this.configVersion,
                         defaultRulePreset: trimString(this.defaultRulePreset) || 'balanced',
+                        profileUpdateIntervalHours: Number.isFinite(Number(this.profileUpdateIntervalHours))
+                            ? Math.min(168, Math.max(1, Math.trunc(Number(this.profileUpdateIntervalHours))))
+                            : 24,
                         customRuleSets: this.ruleSets
                             .map((ruleSet) => ({
                                 name: trimString(ruleSet.name),
