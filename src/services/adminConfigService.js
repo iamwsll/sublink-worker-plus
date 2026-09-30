@@ -9,6 +9,8 @@ export const DEFAULT_ADMIN_CONFIG = deepFreeze({
     version: ADMIN_CONFIG_VERSION,
     // Preset name used when a subscription does not carry its own selectedRules.
     defaultRulePreset: 'balanced',
+    // Suggested client profile refresh cadence, sent as profile-update-interval (hours).
+    profileUpdateIntervalHours: 24,
     customRuleSets: [],
     groupDefaults: {},
     templates: []
@@ -41,6 +43,7 @@ export function normalizeAdminConfig(raw) {
         // are transparently upgraded on read.
         version: ADMIN_CONFIG_VERSION,
         defaultRulePreset: normalizeDefaultRulePreset(source.defaultRulePreset),
+        profileUpdateIntervalHours: normalizeProfileUpdateIntervalHours(source.profileUpdateIntervalHours),
         customRuleSets: normalizeCustomRuleSets(source.customRuleSets),
         groupDefaults: normalizeGroupDefaults(source.groupDefaults),
         templates: normalizeTemplates(source.templates)
@@ -120,6 +123,16 @@ export class AdminConfigService {
 function normalizeDefaultRulePreset(value) {
     const preset = typeof value === 'string' ? value.trim() : '';
     return preset || DEFAULT_ADMIN_CONFIG.defaultRulePreset;
+}
+
+function normalizeProfileUpdateIntervalHours(value) {
+    const hours = Number(value);
+    if (!Number.isFinite(hours)) return DEFAULT_ADMIN_CONFIG.profileUpdateIntervalHours;
+
+    const normalized = Math.trunc(hours);
+    return normalized >= 1 && normalized <= 168
+        ? normalized
+        : DEFAULT_ADMIN_CONFIG.profileUpdateIntervalHours;
 }
 
 function normalizeCustomRuleSets(value) {
