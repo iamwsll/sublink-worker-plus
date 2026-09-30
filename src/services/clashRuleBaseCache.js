@@ -1,7 +1,7 @@
 import yaml from 'js-yaml';
 import { InvalidConfigError } from './errors.js';
 
-export const DEFAULT_CLASH_RULE_BASE_CACHE_TTL_SECONDS = 600;
+export const DEFAULT_CLASH_RULE_BASE_CACHE_TTL_SECONDS = 60;
 const MAX_CLASH_RULE_BASE_CACHE_TTL_SECONDS = 86400;
 const memoryCache = new Map();
 
