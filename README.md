@@ -123,7 +123,7 @@ Admin REST API (session cookie required): `GET/PUT /admin/api/config`, `POST /ad
 | Variable | Default | Description |
 |---|---|---|
 | `ADMIN_PASSWORD` | _(unset)_ | Enables `/admin` when set |
-| `CLASH_RULE_BASE_CACHE_TTL_SECONDS` | `600` | Default cache TTL for remote Clash base configs |
+| `CLASH_RULE_BASE_CACHE_TTL_SECONDS` | `60` | Default cache TTL for remote Clash base configs |
 | `CONFIG_TTL_SECONDS` | 30 days | TTL for stored base configs |
 | `SHORT_LINK_TTL_SECONDS` | _(none)_ | TTL for short links |
 | `REDIS_URL` or `REDIS_HOST`+`REDIS_PORT` | _(none)_ | Redis KV backend (Node/Docker) |
