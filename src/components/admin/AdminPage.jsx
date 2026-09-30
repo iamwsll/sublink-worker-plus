@@ -219,7 +219,7 @@ export const AdminPage = (props) => {
                 type="number"
                 min="1"
                 step="1"
-                x-model.number="profileUpdateIntervalHours"
+                {...{ 'x-model.number': 'profileUpdateIntervalHours' }}
                 class={INPUT_CLASS}
               />
               <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">

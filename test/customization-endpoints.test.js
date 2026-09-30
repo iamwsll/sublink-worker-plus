@@ -80,6 +80,26 @@ afterEach(() => {
     vi.unstubAllGlobals();
 });
 
+describe('/clash profile-update-interval', () => {
+    it('defaults to 24 hours when no admin config is stored', async () => {
+        const app = createTestApp();
+        const res = await app.request(url('/clash', { config: SS_NODES }));
+
+        expect(res.status).toBe(200);
+        expect(res.headers.get('profile-update-interval')).toBe('24');
+    });
+
+    it.each([['6', '6'], [0, '24']])('uses the normalized stored interval %s', async (hours, expected) => {
+        const kv = new MemoryKVAdapter();
+        await seedAdminConfig(kv, { profileUpdateIntervalHours: hours });
+        const app = createTestApp({ kv });
+        const res = await app.request(url('/clash', { config: SS_NODES }));
+
+        expect(res.status).toBe(200);
+        expect(res.headers.get('profile-update-interval')).toBe(expected);
+    });
+});
+
 describe('/singbox customRuleGroups', () => {
     it('turns a query group into rule sets, a rule and a selector outbound', async () => {
         const app = createTestApp();

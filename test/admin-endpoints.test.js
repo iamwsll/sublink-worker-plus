@@ -80,6 +80,21 @@ describe('GET /admin', () => {
         expect(html).not.toContain('id="adminPassword"');
     });
 
+    it('preserves the Alpine numeric binding on the profile update interval input', async () => {
+        const app = createAdminApp();
+        const cookie = await login(app);
+        const res = await app.request('http://localhost/admin', { headers: { Cookie: cookie } });
+
+        expect(res.status).toBe(200);
+        const html = await res.text();
+        const input = html.match(/<input\b[^>]*\bid="adminProfileUpdateIntervalHours"[^>]*>/)?.[0];
+        expect(input).toBeDefined();
+        expect(input).toContain('type="number"');
+        expect(input).toContain('min="1"');
+        expect(input).toContain('step="1"');
+        expect(input).toContain('x-model.number="profileUpdateIntervalHours"');
+    });
+
     it('treats a forged session cookie as anonymous instead of failing', async () => {
         const app = createAdminApp();
         const res = await app.request('http://localhost/admin', {
@@ -291,6 +306,7 @@ describe('GET /admin/api/config', () => {
         expect(await res.json()).toEqual({
             version: 1,
             defaultRulePreset: 'balanced',
+            profileUpdateIntervalHours: 24,
             customRuleSets: [],
             groupDefaults: {},
             templates: []
