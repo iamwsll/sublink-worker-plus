@@ -130,7 +130,7 @@ function normalizeProfileUpdateIntervalHours(value) {
     if (!Number.isFinite(hours)) return DEFAULT_ADMIN_CONFIG.profileUpdateIntervalHours;
 
     const normalized = Math.trunc(hours);
-    return normalized >= 1 && normalized <= 168
+    return normalized >= 1
         ? normalized
         : DEFAULT_ADMIN_CONFIG.profileUpdateIntervalHours;
 }
