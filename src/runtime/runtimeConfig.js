@@ -27,8 +27,8 @@
 
 const DEFAULTS = {
     configTtlSeconds: 60 * 60 * 24 * 30,
-    // Remote Clash base configs change rarely, but operators need a refresh path.
-    clashRuleBaseCacheTtlSeconds: 600
+    // Keep remote Clash base configs fresh while still avoiding a fetch on every request.
+    clashRuleBaseCacheTtlSeconds: 60
 };
 
 /**
