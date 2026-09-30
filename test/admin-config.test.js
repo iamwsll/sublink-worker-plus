@@ -68,7 +68,9 @@ describe('normalizeAdminConfig', () => {
         expect(normalizeAdminConfig({ profileUpdateIntervalHours: '48' }).profileUpdateIntervalHours).toBe(48);
         expect(normalizeAdminConfig({ profileUpdateIntervalHours: 12.9 }).profileUpdateIntervalHours).toBe(12);
 
-        for (const bad of [undefined, null, 0, -1, 169, Infinity, 'nope']) {
+        expect(normalizeAdminConfig({ profileUpdateIntervalHours: 720 }).profileUpdateIntervalHours).toBe(720);
+
+        for (const bad of [undefined, null, 0, -1, Infinity, 'nope']) {
             expect(normalizeAdminConfig({ profileUpdateIntervalHours: bad }).profileUpdateIntervalHours).toBe(24);
         }
     });
