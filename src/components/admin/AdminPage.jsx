@@ -195,18 +195,37 @@ export const AdminPage = (props) => {
         {/* General */}
         <div class={CARD_CLASS}>
           <SectionHeading icon="fa-cog" title={t('adminGeneralSection')} />
-          <div>
-            <label class={LABEL_CLASS} for="adminDefaultPreset">
-              {t('adminDefaultPreset')}
-            </label>
-            <select id="adminDefaultPreset" x-model="defaultRulePreset" class={INPUT_CLASS}>
-              {BUILTIN_PRESETS.map((preset) => (
-                <option value={preset}>{t(preset)}</option>
-              ))}
-              <template x-for="template in templates" x-bind:key="'preset-' + template.key">
-                <option x-bind:value="template.id" x-text="template.id"></option>
-              </template>
-            </select>
+          <div class="space-y-4">
+            <div>
+              <label class={LABEL_CLASS} for="adminDefaultPreset">
+                {t('adminDefaultPreset')}
+              </label>
+              <select id="adminDefaultPreset" x-model="defaultRulePreset" class={INPUT_CLASS}>
+                {BUILTIN_PRESETS.map((preset) => (
+                  <option value={preset}>{t(preset)}</option>
+                ))}
+                <template x-for="template in templates" x-bind:key="'preset-' + template.key">
+                  <option x-bind:value="template.id" x-text="template.id"></option>
+                </template>
+              </select>
+            </div>
+
+            <div>
+              <label class={LABEL_CLASS} for="adminProfileUpdateIntervalHours">
+                {t('adminProfileUpdateIntervalHours')}
+              </label>
+              <input
+                id="adminProfileUpdateIntervalHours"
+                type="number"
+                min="1"
+                step="1"
+                x-model.number="profileUpdateIntervalHours"
+                class={INPUT_CLASS}
+              />
+              <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                {t('adminProfileUpdateIntervalHint')}
+              </p>
+            </div>
           </div>
         </div>
 
