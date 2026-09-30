@@ -21,6 +21,7 @@ describe('DEFAULT_ADMIN_CONFIG', () => {
         expect(DEFAULT_ADMIN_CONFIG).toEqual({
             version: ADMIN_CONFIG_VERSION,
             defaultRulePreset: 'balanced',
+            profileUpdateIntervalHours: 24,
             customRuleSets: [],
             groupDefaults: {},
             templates: []
@@ -60,6 +61,16 @@ describe('normalizeAdminConfig', () => {
         expect(normalizeAdminConfig({ defaultRulePreset: '  minimal  ' }).defaultRulePreset).toBe('minimal');
         expect(normalizeAdminConfig({ defaultRulePreset: '   ' }).defaultRulePreset).toBe('balanced');
         expect(normalizeAdminConfig({ defaultRulePreset: 42 }).defaultRulePreset).toBe('balanced');
+    });
+
+    it('normalizes the client profile update interval in hours', () => {
+        expect(normalizeAdminConfig({ profileUpdateIntervalHours: 12 }).profileUpdateIntervalHours).toBe(12);
+        expect(normalizeAdminConfig({ profileUpdateIntervalHours: '48' }).profileUpdateIntervalHours).toBe(48);
+        expect(normalizeAdminConfig({ profileUpdateIntervalHours: 12.9 }).profileUpdateIntervalHours).toBe(12);
+
+        for (const bad of [undefined, null, 0, -1, 169, Infinity, 'nope']) {
+            expect(normalizeAdminConfig({ profileUpdateIntervalHours: bad }).profileUpdateIntervalHours).toBe(24);
+        }
     });
 
     describe('customRuleSets', () => {
@@ -261,10 +272,15 @@ describe('AdminConfigService.saveConfig', () => {
 
     it('returns the normalized config', async () => {
         const service = new AdminConfigService(new MemoryKVAdapter());
-        const saved = await service.saveConfig({ defaultRulePreset: '  minimal  ', groupDefaults: { Google: 'DIRECT' } });
+        const saved = await service.saveConfig({
+            defaultRulePreset: '  minimal  ',
+            profileUpdateIntervalHours: 6,
+            groupDefaults: { Google: 'DIRECT' }
+        });
 
         expect(saved.version).toBe(ADMIN_CONFIG_VERSION);
         expect(saved.defaultRulePreset).toBe('minimal');
+        expect(saved.profileUpdateIntervalHours).toBe(6);
         expect(saved.groupDefaults).toEqual({ Google: 'DIRECT' });
     });
 });
