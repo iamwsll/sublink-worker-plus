@@ -14,7 +14,7 @@ import { encodeBase64, tryDecodeSubscriptionLines, parseBool } from '../utils.js
 import { APP_NAME, APP_SUBTITLE } from '../constants.js';
 import { ShortLinkService } from '../services/shortLinkService.js';
 import { ConfigStorageService } from '../services/configStorageService.js';
-import { AdminConfigService } from '../services/adminConfigService.js';
+import { AdminConfigService, DEFAULT_ADMIN_CONFIG } from '../services/adminConfigService.js';
 import { normalizeClashRuleBaseCacheTtl, normalizeExternalConfigUrl, resolveClashRuleBaseConfig } from '../services/clashRuleBaseCache.js';
 import { fetchSingboxRuleSet } from '../services/singboxRuleset.js';
 import { ServiceError, MissingDependencyError } from '../services/errors.js';
@@ -257,7 +257,12 @@ export function createApp(bindings = {}) {
             );
             await builder.build();
             const userinfo = builder.getSubscriptionUserinfo();
-            const headers = { 'Content-Type': 'text/yaml; charset=utf-8' };
+            const headers = {
+                'Content-Type': 'text/yaml; charset=utf-8',
+                'profile-update-interval': String(
+                    adminConfig?.profileUpdateIntervalHours ?? DEFAULT_ADMIN_CONFIG.profileUpdateIntervalHours
+                )
+            };
             if (userinfo) {
                 headers['subscription-userinfo'] = userinfo;
             }
