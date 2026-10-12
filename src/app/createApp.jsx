@@ -463,6 +463,7 @@ export function createApp(bindings = {}) {
     });
 
     app.get('/shorten-v2', async (c) => {
+        c.header('Cache-Control', 'no-store');
         try {
             const url = c.req.query('url');
             if (!url) {
@@ -484,24 +485,32 @@ export function createApp(bindings = {}) {
         }
     });
 
-    const redirectHandler = (prefix) => async (c) => {
+    const subscriptionHandler = (prefix) => async (c) => {
+        c.header('Cache-Control', 'no-store');
         try {
             const code = c.req.param('code');
             const shortLinks = requireShortLinkService(services.shortLinks);
             const originalParam = await shortLinks.resolveShortCode(code);
-            if (!originalParam) return c.text('Short URL not found', 404);
+            if (originalParam === null) return c.text('Short URL not found', 404);
 
             const url = new URL(c.req.url);
-            return c.redirect(`${url.origin}/${prefix}${originalParam}`);
+            // Serve the current content at the stable URL so clients never save a stale redirect target.
+            const request = new Request(`${url.origin}/${prefix}${originalParam}`, {
+                headers: c.req.raw.headers
+            });
+            const response = await app.fetch(request, c.env);
+            const headers = new Headers(response.headers);
+            headers.set('Cache-Control', 'no-store');
+            return new Response(response.body, { status: response.status, headers });
         } catch (error) {
             return handleError(c, error, runtime.logger);
         }
     };
 
-    app.get('/s/:code', redirectHandler('surge'));
-    app.get('/b/:code', redirectHandler('singbox'));
-    app.get('/c/:code', redirectHandler('clash'));
-    app.get('/x/:code', redirectHandler('xray'));
+    app.get('/s/:code', subscriptionHandler('surge'));
+    app.get('/b/:code', subscriptionHandler('singbox'));
+    app.get('/c/:code', subscriptionHandler('clash'));
+    app.get('/x/:code', subscriptionHandler('xray'));
 
     app.post('/config', async (c) => {
         try {
@@ -518,6 +527,7 @@ export function createApp(bindings = {}) {
     });
 
     app.get('/resolve', async (c) => {
+        c.header('Cache-Control', 'no-store');
         try {
             const shortUrl = c.req.query('url');
             const t = c.get('t');

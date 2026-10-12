@@ -2,7 +2,7 @@ import { getCookie, setCookie, deleteCookie } from 'hono/cookie';
 import { html } from 'hono/html';
 import { Layout } from '../components/Layout.jsx';
 import { AdminPage } from '../components/admin/AdminPage.jsx';
-import { InvalidConfigError } from '../services/errors.js';
+import { ServiceError, MissingDependencyError, InvalidPayloadError } from '../services/errors.js';
 import { resolveLanguage } from '../i18n/index.js';
 
 // Matches the token lifetime in adminAuth so the cookie and the signature expire together.
@@ -28,6 +28,11 @@ export function registerAdminRoutes(app, { runtime, services, auth }) {
         }
         await next();
     };
+
+    app.use('/admin/api/*', async (c, next) => {
+        c.header('Cache-Control', 'no-store');
+        await next();
+    });
 
     app.get('/admin', async (c) => {
         const t = c.get('t');
@@ -64,6 +69,56 @@ export function registerAdminRoutes(app, { runtime, services, auth }) {
     app.post('/admin/api/logout', (c) => {
         deleteCookie(c, auth.cookieName, { path: '/' });
         return c.json({ ok: true });
+    });
+
+    const subscriptions = () => {
+        if (!services.shortLinks) throw new MissingDependencyError('订阅管理需要持久化 KV 存储');
+        return services.shortLinks;
+    };
+
+    app.get('/admin/api/subscriptions', requireAuth, async (c) => {
+        try {
+            return c.json(await subscriptions().list({ cursor: c.req.query('cursor') || undefined }));
+        } catch (error) { return handleAdminError(c, error, logger); }
+    });
+
+    app.get('/admin/api/subscriptions/:code', requireAuth, async (c) => {
+        try {
+            const record = await subscriptions().getRecord(c.req.param('code'));
+            if (!record) return c.json({ error: 'Subscription not found' }, 404);
+            const configId = new URLSearchParams(record.queryString).get('configId');
+            const configType = ['clash', 'singbox', 'surge'].find(type => configId?.startsWith(type + '_'));
+            const baseConfig = configType ? await services.configStorage.getConfigById(configId) : null;
+            return c.json({ ...record, configType: configType || '', baseConfig });
+        } catch (error) { return handleAdminError(c, error, logger); }
+    });
+
+    const saveSubscription = (create) => async (c) => {
+        try {
+            const payload = await readJsonBody(c);
+            const service = subscriptions();
+            // Validate the record before writing optional uploaded configuration data.
+            if (!payload || typeof payload !== 'object' || Array.isArray(payload)) throw new InvalidPayloadError('订阅内容必须是对象');
+            const record = await service.prepare(create ? payload.code : c.req.param('code'), payload, create);
+            if (payload.baseConfig !== undefined && payload.baseConfig !== null) {
+                if (!['clash', 'singbox', 'surge'].includes(payload.configType)) throw new InvalidPayloadError('请选择基础配置类型');
+                if (typeof payload.baseConfig !== 'object' || Array.isArray(payload.baseConfig)) throw new InvalidPayloadError('基础配置必须是 JSON 对象');
+                const configId = await services.configStorage.saveConfig(payload.configType, payload.baseConfig, { persistent: true });
+                const params = new URLSearchParams(record.queryString);
+                params.set('configId', configId);
+                record.queryString = '?' + params.toString();
+            }
+            await service.write(record);
+            return c.json(record, create ? 201 : 200);
+        } catch (error) { return handleAdminError(c, error, logger); }
+    };
+    app.post('/admin/api/subscriptions', requireAuth, saveSubscription(true));
+    app.put('/admin/api/subscriptions/:code', requireAuth, saveSubscription(false));
+    app.delete('/admin/api/subscriptions/:code', requireAuth, async (c) => {
+        try {
+            await subscriptions().delete(c.req.param('code'));
+            return c.body(null, 204);
+        } catch (error) { return handleAdminError(c, error, logger); }
     });
 
     app.get('/admin/api/config', requireAuth, async (c) => {
@@ -113,9 +168,7 @@ async function readJsonBody(c) {
 }
 
 function handleAdminError(c, error, logger) {
-    if (error instanceof InvalidConfigError) {
-        return c.json({ error: error.message }, 400);
-    }
+    if (error instanceof ServiceError) return c.json({ error: error.message }, error.status);
     logger?.error?.('Admin API error', error);
     return c.json({ error: error?.message || 'Internal error' }, 500);
 }

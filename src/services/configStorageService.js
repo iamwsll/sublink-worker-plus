@@ -26,7 +26,7 @@ export class ConfigStorageService {
         }
     }
 
-    async saveConfig(type, content) {
+    async saveConfig(type, content, { persistent = false } = {}) {
         if (!type) {
             throw new InvalidPayloadError('Missing config type');
         }
@@ -38,7 +38,7 @@ export class ConfigStorageService {
         // Validate string is JSON before storing
         JSON.parse(configString);
 
-        const ttlSeconds = this.options.configTtlSeconds;
+        const ttlSeconds = persistent ? null : this.options.configTtlSeconds;
         const putOptions = ttlSeconds ? { expirationTtl: ttlSeconds } : undefined;
         await kv.put(configId, configString, putOptions);
         return configId;

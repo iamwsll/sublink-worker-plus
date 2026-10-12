@@ -3,6 +3,7 @@
  * @property {(key: string) => Promise<string | null>} get
  * @property {(key: string, value: string, options?: { expirationTtl?: number }) => Promise<void>} put
  * @property {(key: string) => Promise<void>} delete
+ * @property {(options?: {prefix?: string, cursor?: string, limit?: number}) => Promise<{keys: Array<{name: string, expiration?: number}>, cursor?: string, list_complete: boolean}>} [list]
  */
 
 /**

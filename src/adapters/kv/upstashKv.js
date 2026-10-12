@@ -24,6 +24,16 @@ export class UpstashKVAdapter {
         await this.execute(['DEL', key]);
     }
 
+    async list({ prefix = '', cursor = '0', limit = 50 } = {}) {
+        const pattern = prefix.replace(/[\\*?\[\]]/g, '\\$&') + '*';
+        const [next, keys] = await this.execute(['SCAN', cursor || '0', 'MATCH', pattern, 'COUNT', String(limit)]);
+        const entries = await Promise.all(keys.map(async name => {
+            const ttl = await this.execute(['TTL', name]);
+            return { name, expiration: ttl > 0 ? Math.ceil(Date.now() / 1000) + ttl : undefined };
+        }));
+        return { keys: entries, cursor: String(next) === '0' ? undefined : String(next), list_complete: String(next) === '0' };
+    }
+
     async execute(command) {
         const response = await fetch(this.url, {
             method: 'POST',

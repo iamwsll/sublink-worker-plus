@@ -31,6 +31,18 @@ export class MemoryKVAdapter {
         this.clearExpiration(key);
     }
 
+    async list({ prefix = '', cursor = '', limit = 50 } = {}) {
+        const names = [...this.store.keys()].sort().filter(key =>
+            key.startsWith(prefix) && key > cursor && !this.isExpired(key));
+        const selected = names.slice(0, limit);
+        return {
+            keys: selected.map(name => ({ name, expiration: this.expirations.get(name)
+                ? Math.ceil(this.expirations.get(name).expireAt / 1000) : undefined })),
+            list_complete: names.length <= limit,
+            cursor: names.length > limit ? selected.at(-1) : undefined
+        };
+    }
+
     scheduleExpiration(key, ttlSeconds) {
         this.clearExpiration(key);
         const expireAt = Date.now() + ttlSeconds * 1000;
