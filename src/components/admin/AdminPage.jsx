@@ -1,6 +1,8 @@
 /** @jsxRuntime automatic */
 /** @jsxImportSource hono/jsx */
 import { adminLogicFn } from './adminLogic.js';
+import { subscriptionLogicFn } from './subscriptionLogic.js';
+import { SubscriptionPanel } from './SubscriptionPanel.jsx';
 
 // Presets that live in code; a stored preset may also be one of the admin-defined template ids.
 const BUILTIN_PRESETS = ['minimal', 'balanced', 'comprehensive'];
@@ -58,6 +60,7 @@ export const AdminPage = (props) => {
     window.ADMIN_AUTHED = ${authed ? 'true' : 'false'};
     window.APP_LANG = ${JSON.stringify(lang || 'zh-CN')};
     if (typeof __name === 'undefined') { var __name = function(fn) { return fn; }; }
+    (${subscriptionLogicFn.toString()})();
     (${adminLogicFn.toString()})(function (key) {
       var table = window.ADMIN_TRANSLATIONS || {};
       return table[key] || key;
@@ -192,6 +195,7 @@ export const AdminPage = (props) => {
       </div>
 
       <div class="space-y-6 pb-28">
+        <SubscriptionPanel lang={lang} />
         {/* General */}
         <div class={CARD_CLASS}>
           <SectionHeading icon="fa-cog" title={t('adminGeneralSection')} />

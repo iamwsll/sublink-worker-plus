@@ -636,33 +636,21 @@ export const formLogicFn = (t) => {
                     const origin = window.location.origin;
                     const shortened = {};
 
-                    // Use custom short code if provided, otherwise let backend generate it once
-                    let shortCode = this.customShortCode.trim();
-                    let isFirstRequest = true;
-
-                    // Shorten each link type
+                    const codesByQuery = new Map();
+                    const customCode = this.customShortCode.trim();
                     for (const [type, url] of Object.entries(this.generatedLinks)) {
                         try {
-                            let apiUrl = `${origin}/shorten-v2?url=${encodeURIComponent(url)}`;
-
-                            // For the first request, either use custom code or let backend generate
-                            // For subsequent requests, use the code from first request
-                            if (shortCode) {
-                                apiUrl += `&shortCode=${encodeURIComponent(shortCode)}`;
+                            const query = new URL(url).search;
+                            let returnedCode = codesByQuery.get(query);
+                            if (!returnedCode) {
+                                let apiUrl = `${origin}/shorten-v2?url=${encodeURIComponent(url)}`;
+                                // Different format-specific parameters must not overwrite one another.
+                                if (customCode) apiUrl += `&shortCode=${encodeURIComponent(codesByQuery.size ? customCode + '-' + type : customCode)}`;
+                                const response = await fetch(apiUrl);
+                                if (!response.ok) throw new Error(`Failed to shorten ${type} link`);
+                                returnedCode = await response.text();
+                                codesByQuery.set(query, returnedCode);
                             }
-
-                            const response = await fetch(apiUrl);
-                            if (!response.ok) {
-                                throw new Error(`Failed to shorten ${type} link`);
-                            }
-                            const returnedCode = await response.text();
-
-                            // If this is the first request and no custom code was provided,
-                            // use the backend-generated code for all subsequent requests
-                            if (isFirstRequest && !shortCode) {
-                                shortCode = returnedCode;
-                            }
-                            isFirstRequest = false;
 
                             // Map types to their corresponding path prefixes
                             const prefixMap = {
