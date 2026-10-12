@@ -3,7 +3,7 @@
  * Functions for generating rules and rule sets
  */
 
-import { PREDEFINED_RULE_SETS, SITE_RULE_SETS, IP_RULE_SETS, buildRuleContext } from './rules.js';
+import { PREDEFINED_RULE_SETS, buildRuleContext } from './rules.js';
 import { SITE_RULE_SET_BASE_URL, IP_RULE_SET_BASE_URL, CLASH_SITE_RULE_SET_BASE_URL, CLASH_IP_RULE_SET_BASE_URL } from './ruleUrls.js';
 
 function toStringArray(value) {
@@ -102,8 +102,6 @@ export function generateRuleSets(selectedRules = [], customRules = [], customRul
 	const siteRuleSets = new Set();
 	const ipRuleSets = new Set();
 
-	const ruleSets = [];
-
 	unifiedRules.forEach(rule => {
 		if (selectedRulesSet.has(rule.name)) {
 			rule.site_rules.forEach(siteRule => siteRuleSets.add(siteRule));
@@ -111,13 +109,23 @@ export function generateRuleSets(selectedRules = [], customRules = [], customRul
 		}
 	});
 
+	// DNS rules require these sets even when their routing rules are not selected.
+	['geolocation-cn', 'cn', 'geolocation-!cn'].forEach(rule => siteRuleSets.add(rule));
+
+	if (customRules) {
+		customRules.forEach(rule => {
+			sanitizeRuleIds(rule.site).forEach(site => siteRuleSets.add(site));
+			sanitizeRuleIds(rule.ip).forEach(ip => ipRuleSets.add(ip));
+		});
+	}
+
 	const site_rule_sets = Array.from(siteRuleSets).map(rule => {
 		const override = getRuleSetOverride(ruleSetOverrides, rule);
 		return {
 			tag: rule,
 			type: 'remote',
 			format: override?.singbox_format || 'binary',
-			url: override?.url || `${SITE_RULE_SET_BASE_URL}${SITE_RULE_SETS[rule]}`,
+			url: override?.url || `${SITE_RULE_SET_BASE_URL}${rule}.srs`,
 		};
 	});
 
@@ -127,41 +135,9 @@ export function generateRuleSets(selectedRules = [], customRules = [], customRul
 			tag: `${rule}-ip`,
 			type: 'remote',
 			format: override?.singbox_format || 'binary',
-			url: override?.url || `${IP_RULE_SET_BASE_URL}${IP_RULE_SETS[rule]}`,
+			url: override?.url || `${IP_RULE_SET_BASE_URL}${rule}.srs`,
 		};
 	});
-
-	if (!selectedRules.includes('Non-China')) {
-		site_rule_sets.push({
-			tag: 'geolocation-!cn',
-			type: 'remote',
-			format: 'binary',
-			url: `${SITE_RULE_SET_BASE_URL}geolocation-!cn.srs`,
-		});
-	}
-
-	if (customRules) {
-		customRules.forEach(rule => {
-			sanitizeRuleIds(rule.site).forEach(site => {
-				site_rule_sets.push({
-					tag: site,
-					type: 'remote',
-					format: 'binary',
-					url: `${SITE_RULE_SET_BASE_URL}${site}.srs`,
-				});
-			});
-			sanitizeRuleIds(rule.ip).forEach(ip => {
-				ip_rule_sets.push({
-					tag: `${ip}-ip`,
-					type: 'remote',
-					format: 'binary',
-					url: `${IP_RULE_SET_BASE_URL}${ip}.srs`,
-				});
-			});
-		});
-	}
-
-	ruleSets.push(...site_rule_sets, ...ip_rule_sets);
 
 	return { site_rule_sets, ip_rule_sets };
 }
