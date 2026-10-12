@@ -3,6 +3,8 @@ import { InvalidPayloadError, MissingDependencyError, ServiceError } from './err
 
 const KIND = 'subscription-link-v1';
 const MANAGED_PREFIX = 'subscription:';
+const PUBLIC_PREFIX = 'subscription:public:';
+const MIGRATION_KEY = 'admin:subscription-prefix-migration-v1';
 const ACCESS_PREFIX = 'subscription-access:';
 const CODE_PATTERN = /^[A-Za-z0-9_-]{1,64}$/;
 const MAX_QUERY_BYTES = 256 * 1024;
@@ -111,15 +113,38 @@ export class ShortLinkService {
     async list({ cursor, limit = 50 } = {}) {
         const kv = this.ensureKv();
         if (!kv.list) throw new MissingDependencyError('当前存储适配器不支持订阅列表');
-        const page = await kv.list({ cursor, limit });
+        let state;
+        if (cursor) {
+            try { state = JSON.parse(decodeURIComponent(cursor)); } catch { throw new InvalidPayloadError('Invalid subscription cursor'); }
+            if (!state || !['legacy', 'prefix'].includes(state.mode) || typeof state.cursor !== 'string') {
+                throw new InvalidPayloadError('Invalid subscription cursor');
+            }
+        } else {
+            state = { mode: await kv.get(MIGRATION_KEY) === 'done' ? 'prefix' : 'legacy' };
+        }
+        // One bounded discovery pass imports older links; subsequent pages only scan subscriptions.
+        const page = await kv.list({ prefix: state.mode === 'prefix' ? MANAGED_PREFIX : '', cursor: state.cursor, limit });
         const codes = new Map();
         for (const key of page.keys) {
-            const code = key.name.startsWith(MANAGED_PREFIX) ? key.name.slice(MANAGED_PREFIX.length) : key.name;
-            if (CODE_PATTERN.test(code)) codes.set(code, key.expiration);
+            const code = key.name.startsWith(PUBLIC_PREFIX) ? key.name.slice(PUBLIC_PREFIX.length)
+                : key.name.startsWith(MANAGED_PREFIX) ? key.name.slice(MANAGED_PREFIX.length) : key.name;
+            if (!CODE_PATTERN.test(code)) continue;
+            if (state.mode === 'legacy' && key.name === code) {
+                const raw = await kv.get(code);
+                const old = decodeRecord(code, raw, key.expiration);
+                if (old && await kv.get(PUBLIC_PREFIX + code) == null && await kv.get(MANAGED_PREFIX + code) == null) {
+                    // Keep the original key for existing URLs/rollback; never overwrite an admin record.
+                    const ttl = old.expiresAt ? Math.max(60, Math.ceil((old.expiresAt - Date.now()) / 1000)) : null;
+                    await kv.put(PUBLIC_PREFIX + code, JSON.stringify({ ...old, kind: KIND, legacy: false }), ttl ? { expirationTtl: ttl } : undefined);
+                }
+            }
+            codes.set(code, key.expiration);
         }
         const records = await Promise.all([...codes].map(async ([code, expiration]) =>
             this.withAccess(decodeRecord(code, await this.readRaw(code), expiration))));
-        return { items: records.filter(Boolean), cursor: page.list_complete ? null : page.cursor };
+        if (state.mode === 'legacy' && page.list_complete) await kv.put(MIGRATION_KEY, 'done');
+        return { items: records.filter(Boolean), cursor: page.list_complete ? null
+            : encodeURIComponent(JSON.stringify({ mode: state.mode, cursor: page.cursor })) };
     }
 
     async getLastFetchedAt(code) {
@@ -175,7 +200,8 @@ export class ShortLinkService {
         const kv = this.ensureKv();
         // Public shortener writes cannot overwrite the administrator-owned namespace.
         const managed = await kv.get(MANAGED_PREFIX + code);
-        return managed ?? kv.get(code);
+        if (managed != null) return managed;
+        return await kv.get(PUBLIC_PREFIX + code) ?? kv.get(code);
     }
 
     async write(record) {
@@ -186,7 +212,7 @@ export class ShortLinkService {
             await kv.put(MANAGED_PREFIX + record.code, JSON.stringify(record));
             await kv.delete(record.code);
         } else {
-            await kv.put(record.code, JSON.stringify(record), ttl ? { expirationTtl: ttl } : undefined);
+            await kv.put(PUBLIC_PREFIX + record.code, JSON.stringify(record), ttl ? { expirationTtl: ttl } : undefined);
         }
     }
 

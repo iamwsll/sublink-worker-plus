@@ -32,12 +32,22 @@ export class ConfigStorageService {
         }
 
         const kv = this.ensureKv();
-        const configId = `${type}_${generateWebPath(8)}`;
         const configString = this.serializeConfig(type, content);
 
         // Validate string is JSON before storing
-        JSON.parse(configString);
+        const parsed = JSON.parse(configString);
 
+        if (persistent) {
+            // Immutable content IDs let alias-only edits reuse data without changing shared configs.
+            const canonical = canonicalJson(parsed);
+            const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(canonical));
+            const hash = [...new Uint8Array(digest)].map(byte => byte.toString(16).padStart(2, '0')).join('');
+            const configId = `${type}_managed_${hash}`;
+            if (await kv.get(configId) !== canonical) await kv.put(configId, canonical);
+            return configId;
+        }
+
+        const configId = `${type}_${generateWebPath(8)}`;
         const ttlSeconds = persistent ? null : this.options.configTtlSeconds;
         const putOptions = ttlSeconds ? { expirationTtl: ttlSeconds } : undefined;
         await kv.put(configId, configString, putOptions);
@@ -61,4 +71,12 @@ export class ConfigStorageService {
         }
         throw new InvalidPayloadError('Unsupported config content type');
     }
+}
+
+function canonicalJson(value) {
+    if (Array.isArray(value)) return '[' + value.map(canonicalJson).join(',') + ']';
+    if (value && typeof value === 'object') {
+        return '{' + Object.keys(value).sort().map(key => JSON.stringify(key) + ':' + canonicalJson(value[key])).join(',') + '}';
+    }
+    return JSON.stringify(value);
 }

@@ -63,13 +63,14 @@ describe('admin subscription lifecycle', () => {
         const list = await (await api()).json();
         expect(list.items.map(item => item.code)).toEqual(['old-code']);
         const detail = await (await api('/old-code')).json();
-        expect(detail.legacy).toBe(true);
+        expect(detail.legacy).toBe(false);
         expect(detail.expiresAt).toBeGreaterThan(Date.now());
         const saved = await (await api('/old-code', 'PUT', payload('Migrated'))).json();
         expect(saved.expiresAt).toBe(detail.expiresAt);
         expect(await (await app.request('/c/old-code')).text()).toContain('Migrated');
         await kv.delete('old-code');
         await kv.delete('subscription:old-code');
+        await kv.delete('subscription:public:old-code');
     });
 
     it('prevents unauthenticated overwrites and reserved KV key collisions', async () => {
