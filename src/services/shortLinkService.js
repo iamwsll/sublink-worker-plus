@@ -1,3 +1,4 @@
+import { generateWebPath } from '../utils.js';
 import { InvalidPayloadError, MissingDependencyError, ServiceError } from './errors.js';
 
 const KIND = 'subscription-link-v1';
@@ -54,10 +55,19 @@ export class ShortLinkService {
         return this.kv;
     }
 
+    async generateCode() {
+        // Retry collisions without overwriting existing subscriptions or reusing revoked codes.
+        for (let attempt = 0; attempt < 5; attempt += 1) {
+            const code = generateWebPath();
+            if (await this.readRaw(code) == null) return code;
+        }
+        throw new ServiceError('暂时无法生成可用的短链接标识，请重试', 503);
+    }
+
     async createShortLink(queryString, providedCode) {
         this.ensureKv();
         const query = normalizeQuery(queryString);
-        const code = providedCode || crypto.randomUUID().replace(/-/g, '');
+        const code = providedCode || await this.generateCode();
         validateCode(code);
         const existing = await this.readRaw(code);
         if (existing !== null && existing !== undefined) {
@@ -138,7 +148,7 @@ export class ShortLinkService {
     async prepare(code, payload, create = false) {
         this.ensureKv();
         if (!payload || typeof payload !== 'object' || Array.isArray(payload)) throw new InvalidPayloadError('订阅内容必须是对象');
-        code = code || crypto.randomUUID().replace(/-/g, '');
+        code = code || await this.generateCode();
         validateCode(code);
         const existing = create ? null : await this.getRecord(code);
         if (create && (await this.readRaw(code)) != null) throw new ServiceError('链接标识已存在', 409);
