@@ -92,31 +92,31 @@ Set the `ADMIN_PASSWORD` environment variable and open `/admin` — a unified we
 | Group defaults | Preferred default option per policy group (e.g. `Bilibili → DIRECT`) |
 | Rule templates | subconverter INI lines (`ruleset=` / `custom_proxy_group=`) that fully own the Clash / sing-box / Surge rule output, plus the template's own Clash base config URL; one template can be marked as default |
 
-### 已分发订阅管理
+### Managed Subscriptions
 
-**链接分发后，仍可在云端修改订阅内容。** 为手机、电脑或不同使用者创建独立订阅，在后台调整节点来源、规则和配置；客户端继续使用原来的链接，下次更新即可获取新内容，无需重新分发。
+**Update subscription content after sharing the link.** Create separate subscriptions for phones, computers, or different recipients, then manage their node sources, rules, and configuration from the admin panel. Clients keep the same URL and receive your changes on their next subscription update.
 
-| 功能 | 说明 |
+| Feature | Description |
 |---|---|
-| 订阅列表 | 分页浏览订阅，按别名、链接标识或备注搜索已加载的记录 |
-| 别名与备注 | 为订阅命名，例如「手机」「家用电脑」，方便识别和管理 |
-| 在线编辑 | 新建订阅或导入转换长链接，编辑节点来源、转换参数、规则模板和基础配置 JSON |
-| 多客户端支持 | 为同一订阅复制 Clash、sing-box、Surge 或 Xray 的固定短链接 |
-| 拉取记录 | 查看最后成功拉取时间，了解订阅是否被请求更新；时间按浏览器本地时区显示 |
-| 内容预览 | 在后台查看生成的订阅内容，预览不计入拉取记录 |
-| 生命周期管理 | 设置到期时间、暂停或恢复订阅，也可直接在列表中确认删除 |
+| Subscription list | Browse subscriptions with pagination and search loaded entries by alias, link identifier, or notes |
+| Aliases and notes | Name subscriptions, such as "Phone" or "Home computer", to identify devices and recipients |
+| Online editing | Create a subscription or import a conversion URL; edit node sources, conversion parameters, rule templates, and base configuration JSON |
+| Multiple clients | Copy stable subscription URLs for Clash, sing-box, Surge, or Xray |
+| Fetch history | See the last successful subscription fetch in your browser's local time zone |
+| Content preview | Preview generated content in the admin panel without updating the fetch timestamp |
+| Lifecycle controls | Set an expiration date, disable or re-enable a subscription, or delete it directly from the list with confirmation |
 
-**使用方法：**
+**Getting started:**
 
-1. 配置持久化 KV 存储和 `ADMIN_PASSWORD`，登录 `/admin`。
-2. 在「订阅链接管理」中新建订阅，填写别名和来源，保存后复制对应客户端的链接。
-3. 将链接导入客户端。之后在后台编辑同一订阅，客户端下次更新时获取修改后的内容。
+1. Configure persistent KV storage and `ADMIN_PASSWORD`, then sign in at `/admin`.
+2. Open subscription management, create a subscription, enter an alias and sources, and save it. Copy the URL for your client.
+3. Import that URL into the client. Subsequent edits to the same subscription take effect when the client next updates it.
 
-例如，将「家用电脑」的节点来源从 A 改为 B，只需在后台保存，电脑上的订阅地址无需更换。停用会阻止后续拉取，重新启用即可恢复；删除或到期后链接失效，但不会移除客户端已经下载的配置。
+For example, switching the "Home computer" subscription from source A to source B only requires saving the change in the admin panel; the computer's subscription URL stays the same. Disabling a subscription blocks further fetches until it is re-enabled. Deleted or expired links stop serving updates, but do not remove configuration already downloaded by a client.
 
-后台保存的基础配置长期保留，相同内容自动复用。已有短链接可通过首次完整浏览列表自动纳入管理；直接使用转换长链接的客户端，需要改为导入固定短链接。
+Base configurations saved through the admin panel persist without automatic expiration, and identical content is reused. Existing short links are automatically discovered when you first browse all pages of the subscription list. Clients using a full conversion URL need to import a stable short link to use this management feature.
 
-订阅修改受客户端更新周期及存储同步延迟影响，并非实时推送。拉取时间表示成功的订阅请求，不代表设备在线；统计异常不影响订阅内容返回。管理接口和预览均需登录，持有订阅链接的客户端可直接拉取内容。
+Changes depend on the client's update schedule and storage propagation; they are not pushed instantly. The fetch timestamp records a successful subscription request, not whether a device is online. Tracking failures do not prevent content delivery. Management and previews require an admin session; clients holding a subscription URL can fetch its content directly.
 
 ### Rule Templates
 
