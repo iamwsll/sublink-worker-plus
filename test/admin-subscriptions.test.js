@@ -18,6 +18,19 @@ async function setup() {
 }
 
 describe('admin subscription lifecycle', () => {
+    it('keeps the Surge embedded update URL on the managed subscription', async () => {
+        const { app, api } = await setup();
+        await api('', 'POST', { ...payload('Before'), code: 'surge-stable' });
+        for (const response of [await app.request('/s/surge-stable'), await api('/surge-stable/preview/s')]) {
+            const firstLine = (await response.text()).split('\n')[0];
+            expect(firstLine).toBe('#!MANAGED-CONFIG http://localhost/s/surge-stable interval=43200 strict=false');
+        }
+        await api('/surge-stable', 'PUT', payload('After'));
+        expect(await (await app.request('/s/surge-stable')).text()).toContain('After');
+        await api('/surge-stable', 'PUT', { ...payload('After'), enabled: false });
+        expect((await app.request('/s/surge-stable')).status).toBe(410);
+    });
+
     it('requires login for listing, reading, creating, editing and deleting', async () => {
         const { app } = await setup();
         for (const [path, method] of [['', 'GET'], ['/secret', 'GET'], ['', 'POST'], ['/secret', 'PUT'], ['/secret', 'DELETE']]) {

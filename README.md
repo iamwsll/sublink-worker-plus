@@ -51,6 +51,7 @@
 Everything upstream has, plus:
 
 - **🛠️ Unified Admin Panel** (`/admin`) — change server-side defaults without a redeploy: default rule preset, global custom rule sets, policy-group defaults, and rule templates. One `ADMIN_PASSWORD` env var turns it on
+- **🔗 Managed subscriptions** — edit distributed links in place, identify them by alias, check their last successful fetch, preview privately, and disable or delete them from `/admin`
 - **📋 Rule Templates** — paste subconverter INI lines (`ruleset=` / `custom_proxy_group=`) and fully own the generated rules and policy groups of **Clash, sing-box and Surge** at once (sing-box rule lists are converted on the fly via the built-in `/ruleset/singbox` endpoint). Switch templates per request with `?template=<id>`, and let visitors opt individual template rules out with `template_excluded_rules`
 - **🔐 REALITY ML-KEM preserved** — the mihomo `support-x25519mlkem768` option survives conversion in both directions (VLESS URI and Clash YAML input → Clash output), including explicit `false`
 - **🧩 Custom Rule Groups everywhere** — point any rule group at your own remote rule lists via `customRuleGroups`, on all four builder endpoints
@@ -81,14 +82,41 @@ Sing-Box • Clash • Xray/V2Ray • Surge
 
 ## 🛠️ Admin Panel
 
-Set the `ADMIN_PASSWORD` environment variable and open `/admin` — a unified web console for everything that used to require a redeploy (disabled entirely when the variable is unset). Sessions are HMAC-SHA256 signed HttpOnly cookies (7-day expiry). All settings persist in KV under `admin:config`, with an in-memory fallback when KV is unavailable.
+Set the `ADMIN_PASSWORD` environment variable and open `/admin` — a unified web console for everything that used to require a redeploy (disabled entirely when the variable is unset). Sessions are HMAC-SHA256 signed HttpOnly cookies (7-day expiry). Global settings persist under `admin:config`; subscription records and access timestamps use separate keys. Configure persistent KV storage for subscription management.
 
 | Section | What it controls |
 |---|---|
-| General | Default rule preset used when a request carries no `selectedRules` |
+| General | Default rule preset used when a request carries no `selectedRules`, and the suggested Clash refresh interval |
+| Subscription links | Aliases, source parameters, base configs, last successful fetch, previews, expiry, enable/disable, and quick deletion |
 | Custom rule sets | Server-side rule groups (`name` + rule-list URLs + optional default option). They appear as extra options on the home page and can be referenced by `selectedRules` |
 | Group defaults | Preferred default option per policy group (e.g. `Bilibili → DIRECT`) |
 | Rule templates | subconverter INI lines (`ruleset=` / `custom_proxy_group=`) that fully own the Clash / sing-box / Surge rule output, plus the template's own Clash base config URL; one template can be marked as default |
+
+### 已分发订阅管理
+
+**链接分发后，仍可在云端修改订阅内容。** 为手机、电脑或不同使用者创建独立订阅，在后台调整节点来源、规则和配置；客户端继续使用原来的链接，下次更新即可获取新内容，无需重新分发。
+
+| 功能 | 说明 |
+|---|---|
+| 订阅列表 | 分页浏览订阅，按别名、链接标识或备注搜索已加载的记录 |
+| 别名与备注 | 为订阅命名，例如「手机」「家用电脑」，方便识别和管理 |
+| 在线编辑 | 新建订阅或导入转换长链接，编辑节点来源、转换参数、规则模板和基础配置 JSON |
+| 多客户端支持 | 为同一订阅复制 Clash、sing-box、Surge 或 Xray 的固定短链接 |
+| 拉取记录 | 查看最后成功拉取时间，了解订阅是否被请求更新；时间按浏览器本地时区显示 |
+| 内容预览 | 在后台查看生成的订阅内容，预览不计入拉取记录 |
+| 生命周期管理 | 设置到期时间、暂停或恢复订阅，也可直接在列表中确认删除 |
+
+**使用方法：**
+
+1. 配置持久化 KV 存储和 `ADMIN_PASSWORD`，登录 `/admin`。
+2. 在「订阅链接管理」中新建订阅，填写别名和来源，保存后复制对应客户端的链接。
+3. 将链接导入客户端。之后在后台编辑同一订阅，客户端下次更新时获取修改后的内容。
+
+例如，将「家用电脑」的节点来源从 A 改为 B，只需在后台保存，电脑上的订阅地址无需更换。停用会阻止后续拉取，重新启用即可恢复；删除或到期后链接失效，但不会移除客户端已经下载的配置。
+
+后台保存的基础配置长期保留，相同内容自动复用。已有短链接可通过首次完整浏览列表自动纳入管理；直接使用转换长链接的客户端，需要改为导入固定短链接。
+
+订阅修改受客户端更新周期及存储同步延迟影响，并非实时推送。拉取时间表示成功的订阅请求，不代表设备在线；统计异常不影响订阅内容返回。管理接口和预览均需登录，持有订阅链接的客户端可直接拉取内容。
 
 ### Rule Templates
 
@@ -115,6 +143,8 @@ All parameters compose with the existing query API and can be persisted through 
 | `clash_rule_base_ttl` | /clash | Cache seconds for the remote base (0 disables, max 86400) |
 | `clash_rule_base_refresh` | /clash | `true` bypasses the cache once |
 | `template` | /clash /subconverter | Apply an admin-defined rule template by id |
+
+Subscription REST API (session cookie required): `GET/POST /admin/api/subscriptions`, `GET/PUT/DELETE /admin/api/subscriptions/:code`, and `GET /admin/api/subscriptions/:code/preview/:format` (`c`, `b`, `s`, `x`). List responses include `items` and an opaque `cursor`; pass the cursor unchanged to load the next page.
 
 Admin REST API (session cookie required): `GET/PUT /admin/api/config`, `POST /admin/api/reset`, plus `POST /admin/api/login` and `POST /admin/api/logout`.
 
@@ -154,22 +184,3 @@ Thanks to everyone who has starred this project! 🌟
    <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=iamwsll/sublink-worker-plus&type=Date" />
  </picture>
 </a>
-
-### 已分发订阅链接管理
-
-设置 `ADMIN_PASSWORD` 并登录 `/admin` 后，可在「订阅链接管理」中：
-
-- 分页查看、搜索已加载的订阅，自动兼容 KV 中已有的短链接。
-- 新建订阅，或从已有转换长链接导入参数；为链接填写名称、分发对象备注。
-- 编辑订阅来源/节点、完整转换参数（模板、规则、分组等）及基础配置 JSON。
-- 复制固定的 Clash、Sing-box、Surge、Xray 链接，设置到期时间、停用或删除订阅。
-
-保存后固定短链接不变。客户端下一次刷新时，服务端使用当前保存的参数生成内容；短链接直接返回订阅内容，不再跳转到携带参数的长链接。停用返回 HTTP 410，删除返回 404，均不会删除客户端已经下载的配置。每种格式使用同一份参数；若需要不同的参数，可创建独立订阅。
-
-管理范围是保存在本站 KV 中的链接，并不代表能够判断谁已导入或使用了它。直接携带参数的长链接没有可修改的云端记录，需转换成短链接并重新分发；已过期或删除的旧 KV 数据无法恢复。若客户端此前保存的是旧跳转目标，需要重新导入固定短链接。
-
-管理接口与现有后台共用登录认证。公开 `/shorten-v2` 不再覆盖已有的不同订阅参数；管理员保存的配置位于独立命名空间，避免公开短链写入覆盖管理内容。删除保留撤销标记，已撤销的标识不能重新分配。
-
-Cloudflare KV、Redis、Upstash 都支持分页发现。Node/Vercel 使用内存 KV 时只适合临时测试，持久使用应配置相应的持久化存储。使用最终一致的存储时，修改存在传播时间，并非跨地区瞬时生效。后台保存的基础配置为持久化副本，不受普通上传配置默认 30 天 TTL 限制。
-
-列表优先显示「订阅别名」（原名称字段），点击订阅即可编辑；别名仅用于后台识别，不改变固定地址。列表中的「最后成功拉取」按浏览器本地时区显示，记录固定订阅链接成功返回内容的 GET 请求，不包括通过独立鉴权入口进行的后台「预览内容」。管理查询、链接解析、HEAD、失败或停用请求也不更新该时间；上线前的访问无法回填。拉取时间独立存储，不改写订阅配置；存储同步、密集并发或统计写入失败时可能延迟或缺失，统计失败不影响订阅内容返回。

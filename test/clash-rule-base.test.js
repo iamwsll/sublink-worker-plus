@@ -22,16 +22,16 @@ afterEach(() => {
 });
 
 describe('normalizeClashRuleBaseCacheTtl', () => {
-    it('falls back to 600 for non-numeric and negative values', () => {
-        expect(normalizeClashRuleBaseCacheTtl(undefined)).toBe(600);
-        expect(normalizeClashRuleBaseCacheTtl(null)).toBe(600);
-        expect(normalizeClashRuleBaseCacheTtl('abc')).toBe(600);
-        expect(normalizeClashRuleBaseCacheTtl('')).toBe(600);
-        expect(normalizeClashRuleBaseCacheTtl({})).toBe(600);
-        expect(normalizeClashRuleBaseCacheTtl(-1)).toBe(600);
-        expect(normalizeClashRuleBaseCacheTtl(-1e9)).toBe(600);
-        expect(normalizeClashRuleBaseCacheTtl(NaN)).toBe(600);
-        expect(normalizeClashRuleBaseCacheTtl(Infinity)).toBe(600);
+    it('falls back to 60 for non-numeric and negative values', () => {
+        expect(normalizeClashRuleBaseCacheTtl(undefined)).toBe(60);
+        expect(normalizeClashRuleBaseCacheTtl(null)).toBe(60);
+        expect(normalizeClashRuleBaseCacheTtl('abc')).toBe(60);
+        expect(normalizeClashRuleBaseCacheTtl('')).toBe(60);
+        expect(normalizeClashRuleBaseCacheTtl({})).toBe(60);
+        expect(normalizeClashRuleBaseCacheTtl(-1)).toBe(60);
+        expect(normalizeClashRuleBaseCacheTtl(-1e9)).toBe(60);
+        expect(normalizeClashRuleBaseCacheTtl(NaN)).toBe(60);
+        expect(normalizeClashRuleBaseCacheTtl(Infinity)).toBe(60);
     });
 
     it('keeps 0 so callers can disable caching', () => {
@@ -52,12 +52,12 @@ describe('normalizeClashRuleBaseCacheTtl', () => {
         expect(normalizeClashRuleBaseCacheTtl('99999')).toBe(86400);
 
         expect(normalizeClashRuleBaseCacheTtl(undefined, 30)).toBe(30);
-        expect(normalizeClashRuleBaseCacheTtl('junk', 30)).toBe(600);
+        expect(normalizeClashRuleBaseCacheTtl('junk', 30)).toBe(60);
         expect(normalizeClashRuleBaseCacheTtl(0, 30)).toBe(0);
     });
 
     it('exposes the documented default constant', () => {
-        expect(DEFAULT_CLASH_RULE_BASE_CACHE_TTL_SECONDS).toBe(600);
+        expect(DEFAULT_CLASH_RULE_BASE_CACHE_TTL_SECONDS).toBe(60);
     });
 });
 
