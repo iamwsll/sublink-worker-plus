@@ -23,10 +23,13 @@ export const SubscriptionPanel = ({ lang }) => {
             <p x-cloak x-show="message" x-text="message" class="text-green-600 py-3" role="status"></p>
             <div class="my-4 divide-y divide-gray-100 dark:divide-gray-700 max-h-80 overflow-y-auto">
                 <template x-for="item in filteredItems" x-bind:key="item.code">
-                    <button type="button" x-on:click="edit(item.code)" x-bind:disabled="busy" class="w-full text-left flex items-center justify-between gap-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50">
-                        <span class="min-w-0"><span class="block font-medium truncate" x-text="item.name || item.code"></span><span class="block text-xs text-gray-500 truncate" x-text="item.code"></span><span class="block text-xs text-gray-500 dark:text-gray-400 mt-1">{label('最后成功拉取：', 'Last successful fetch: ')}<span x-text="formatFetchTime(item.lastFetchedAt)"></span></span></span>
-                        <span class="text-xs shrink-0" x-text={zh ? "item.enabled ? '启用' : '停用'" : "item.enabled ? 'Enabled' : 'Disabled'"}></span>
-                    </button>
+                    <div class="flex items-center gap-3">
+                        <button type="button" x-on:click="edit(item.code)" x-bind:disabled="busy" class="flex-1 min-w-0 text-left flex items-center justify-between gap-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50">
+                            <span class="min-w-0"><span class="block font-medium truncate" x-text="item.name || item.code"></span><span class="block text-xs text-gray-500 truncate" x-text="item.code"></span><span class="block text-xs text-gray-500 dark:text-gray-400 mt-1">{label('最后成功拉取：', 'Last successful fetch: ')}<span x-text="formatFetchTime(item.lastFetchedAt)"></span></span></span>
+                            <span class="text-xs shrink-0" x-text={zh ? "item.enabled ? '启用' : '停用'" : "item.enabled ? 'Enabled' : 'Disabled'"}></span>
+                        </button>
+                        <button type="button" x-on:click="removeSubscription(item)" x-bind:disabled="busy" class={button + ' shrink-0 text-red-600 dark:text-red-400'} x-bind:aria-label="'Delete ' + (item.name || item.code)">{label('删除', 'Delete')}</button>
+                    </div>
                 </template>
                 <p x-show="!busy && filteredItems.length === 0" class="text-gray-500 text-sm py-4">{label('当前页没有匹配的订阅。若有下一页，请继续加载。', 'No matching subscriptions on this page. Load more if available.')}</p>
             </div>

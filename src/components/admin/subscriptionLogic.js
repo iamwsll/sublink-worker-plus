@@ -98,14 +98,17 @@ export const subscriptionLogicFn = () => {
             } catch (error) { this.error = error.message; }
             finally { this.busy = false; }
         },
-        async removeSubscription() {
+        async removeSubscription(target = this.editor) {
+            if (this.busy || !target?.code) return;
+            const code = target.code;
+            const name = target.name || code;
             const warning = window.APP_LANG?.startsWith('zh') ? '删除后，此订阅链接将无法再拉取更新。确认删除？' : 'This subscription URL will stop serving updates. Delete it?';
-            if (!window.confirm(warning)) return;
+            if (!window.confirm(name + '\n\n' + warning)) return;
             this.busy = true; this.error = ''; this.message = '';
             try {
-                await this.api('/' + encodeURIComponent(this.editor.code), 'DELETE');
-                this.items = this.items.filter(item => item.code !== this.editor.code);
-                this.editor = null;
+                await this.api('/' + encodeURIComponent(code), 'DELETE');
+                this.items = this.items.filter(item => item.code !== code);
+                if (this.editor?.code === code) this.editor = null;
             } catch (error) { this.error = error.message; }
             finally { this.busy = false; }
         },
