@@ -2,6 +2,7 @@ import { InvalidPayloadError, MissingDependencyError, ServiceError } from './err
 
 const KIND = 'subscription-link-v1';
 const MANAGED_PREFIX = 'subscription:';
+const ACCESS_PREFIX = 'subscription-access:';
 const CODE_PATTERN = /^[A-Za-z0-9_-]{1,64}$/;
 const MAX_QUERY_BYTES = 256 * 1024;
 const encoder = new TextEncoder();
@@ -83,11 +84,11 @@ export class ShortLinkService {
             do {
                 const page = await kv.list({ prefix: code, cursor, limit: 100 });
                 const key = page.keys.find(key => key.name === code);
-                if (key) return decodeRecord(code, raw, key.expiration);
+                if (key) return this.withAccess(decodeRecord(code, raw, key.expiration));
                 cursor = page.list_complete ? undefined : page.cursor;
             } while (cursor);
         }
-        return record;
+        return this.withAccess(record);
     }
 
     async resolveShortCode(code) {
@@ -107,8 +108,31 @@ export class ShortLinkService {
             if (CODE_PATTERN.test(code)) codes.set(code, key.expiration);
         }
         const records = await Promise.all([...codes].map(async ([code, expiration]) =>
-            decodeRecord(code, await this.readRaw(code), expiration)));
+            this.withAccess(decodeRecord(code, await this.readRaw(code), expiration))));
         return { items: records.filter(Boolean), cursor: page.list_complete ? null : page.cursor };
+    }
+
+    async getLastFetchedAt(code) {
+        try {
+            const value = Number(await this.ensureKv().get(ACCESS_PREFIX + code));
+            return Number.isSafeInteger(value) && value > 0 ? value : null;
+        } catch {
+            // Telemetry must not prevent administrators from managing the subscription.
+            return null;
+        }
+    }
+
+    async withAccess(record) {
+        return record ? { ...record, lastFetchedAt: await this.getLastFetchedAt(record.code) } : null;
+    }
+
+    async recordSuccessfulFetch(code, timestamp = Date.now()) {
+        validateCode(code);
+        const previous = await this.getLastFetchedAt(code);
+        // KV permits one write per key per second; coalesce rapid pulls and avoid known older timestamps.
+        if (previous !== null && timestamp - previous < 1000) return;
+        // Store telemetry separately so a fetch can never overwrite an admin edit or revive a deleted link.
+        await this.ensureKv().put(ACCESS_PREFIX + code, String(timestamp));
     }
 
     async prepare(code, payload, create = false) {

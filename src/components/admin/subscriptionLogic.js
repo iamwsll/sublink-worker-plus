@@ -28,6 +28,11 @@ export const subscriptionLogicFn = () => {
             const q = this.search.toLowerCase();
             return this.items.filter(item => [item.code, item.name, item.note].some(value => (value || '').toLowerCase().includes(q)));
         },
+        formatFetchTime(value) {
+            const zh = window.APP_LANG?.startsWith('zh');
+            if (!value) return zh ? '暂无拉取记录' : 'No recorded fetch';
+            return new Date(value).toLocaleString(zh ? 'zh-CN' : undefined, { hour12: false });
+        },
         setParameters(query) {
             const params = new URLSearchParams(query);
             this.source = params.get('config') || '';
@@ -105,6 +110,7 @@ export const subscriptionLogicFn = () => {
             finally { this.busy = false; }
         },
         link(prefix) { return window.location.origin + '/' + prefix + '/' + encodeURIComponent(this.editor?.code || ''); },
+        previewLink(prefix) { return '/admin/api/subscriptions/' + encodeURIComponent(this.editor?.code || '') + '/preview/' + prefix; },
         async copyLink(prefix) {
             try { await navigator.clipboard.writeText(this.link(prefix)); }
             catch { window.prompt('Copy URL', this.link(prefix)); }

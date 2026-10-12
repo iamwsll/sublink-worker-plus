@@ -48,7 +48,10 @@ export function createApp(bindings = {}) {
     });
 
     // Registered after the language middleware so admin pages can translate their chrome.
-    registerAdminRoutes(app, { runtime, services, auth: adminAuth });
+    registerAdminRoutes(app, {
+        runtime, services, auth: adminAuth,
+        previewSubscription: (c, prefix) => subscriptionHandler(prefix, false)(c)
+    });
 
     app.get('/', async (c) => {
         const t = c.get('t');
@@ -485,7 +488,7 @@ export function createApp(bindings = {}) {
         }
     });
 
-    const subscriptionHandler = (prefix) => async (c) => {
+    const subscriptionHandler = (prefix, trackAccess = true) => async (c) => {
         c.header('Cache-Control', 'no-store');
         try {
             const code = c.req.param('code');
@@ -499,6 +502,14 @@ export function createApp(bindings = {}) {
                 headers: c.req.raw.headers
             });
             const response = await app.fetch(request, c.env);
+            if (trackAccess && response.ok && c.req.method === 'GET') {
+                try {
+                    await shortLinks.recordSuccessfulFetch(code);
+                } catch {
+                    // A KV write failure or rate limit must never turn a valid subscription into an error.
+                    runtime.logger?.warn?.('Failed to record subscription fetch time');
+                }
+            }
             const headers = new Headers(response.headers);
             headers.set('Cache-Control', 'no-store');
             return new Response(response.body, { status: response.status, headers });

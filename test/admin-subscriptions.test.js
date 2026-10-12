@@ -144,3 +144,90 @@ it('admin overrides and revocations survive late writes to the public legacy key
     await kv.put('stable', query('LatePublicWrite'));
     expect((await app.request('/c/stable')).status).toBe(404);
 });
+
+it('shows successful pull time in list/detail and preserves it when changing the alias', async () => {
+    const { app, api } = await setup();
+    await api('', 'POST', { ...payload('Initial'), code: 'tracked' });
+    expect((await (await api('/tracked')).json()).lastFetchedAt).toBeNull();
+    const started = Date.now();
+    expect((await app.request('/c/tracked')).status).toBe(200);
+    const detail = await (await api('/tracked')).json();
+    expect(detail.lastFetchedAt).toBeGreaterThanOrEqual(started);
+    const renamed = await (await api('/tracked', 'PUT', { ...payload('Initial'), name: '我的手机' })).json();
+    expect(renamed.name).toBe('我的手机');
+    expect(renamed.code).toBe('tracked');
+    expect(renamed.lastFetchedAt).toBe(detail.lastFetchedAt);
+    const list = await (await api()).json();
+    expect(list.items).toHaveLength(1);
+    expect(list.items[0].name).toBe('我的手机');
+    expect(list.items[0].lastFetchedAt).toBe(detail.lastFetchedAt);
+});
+
+it('does not record management reads, resolves, HEAD requests, errors or disabled subscriptions as pulls', async () => {
+    const { app, api } = await setup();
+    await api('', 'POST', { ...payload('Node'), code: 'unread' });
+    await api('/unread');
+    await api();
+    await app.request('/resolve?url=' + encodeURIComponent('http://localhost/c/unread'));
+    await app.request('/c/unread', { method: 'HEAD' });
+    expect((await (await api('/unread')).json()).lastFetchedAt).toBeNull();
+    await api('/unread', 'PUT', { ...payload('Node'), queryString: '' });
+    expect((await app.request('/c/unread')).status).toBe(400);
+    expect((await (await api('/unread')).json()).lastFetchedAt).toBeNull();
+    await api('/unread', 'PUT', { ...payload('Node'), enabled: false });
+    expect((await app.request('/c/unread')).status).toBe(410);
+    expect((await (await api('/unread')).json()).lastFetchedAt).toBeNull();
+});
+
+it('preserves legacy records and continues serving when telemetry writes fail', async () => {
+    const { app, kv, api } = await setup();
+    const original = query('Legacy');
+    await kv.put('legacy-track', original);
+    expect((await app.request('/x/legacy-track')).status).toBe(200);
+    expect(await kv.get('legacy-track')).toBe(original);
+    expect((await (await api('/legacy-track')).json()).lastFetchedAt).toBeGreaterThan(0);
+    const put = kv.put.bind(kv);
+    kv.put = async (key, ...args) => {
+        if (key.startsWith('subscription-access:')) throw new Error('KV rate limit');
+        return put(key, ...args);
+    };
+    await kv.put('failing-track', original);
+    expect((await app.request('/c/failing-track')).status).toBe(200);
+    expect((await (await api('/failing-track')).json()).lastFetchedAt).toBeNull();
+});
+
+it('coalesces rapid pulls and cannot overwrite edits or revive revoked subscriptions', async () => {
+    const { app, api, kv } = await setup();
+    await api('', 'POST', { ...payload('Node'), code: 'isolated' });
+    const service = new ShortLinkService(kv);
+    await service.recordSuccessfulFetch('isolated', 100000);
+    await service.recordSuccessfulFetch('isolated', 100500);
+    expect(await service.getLastFetchedAt('isolated')).toBe(100000);
+    await service.recordSuccessfulFetch('isolated', 102000);
+    expect(await service.getLastFetchedAt('isolated')).toBe(102000);
+    await api('/isolated', 'PUT', { ...payload('Node'), name: 'Custom alias' });
+    await service.recordSuccessfulFetch('isolated', 104000);
+    expect((await (await api('/isolated')).json()).name).toBe('Custom alias');
+    await api('/isolated', 'DELETE');
+    await service.recordSuccessfulFetch('isolated', 106000);
+    expect((await app.request('/c/isolated')).status).toBe(404);
+    expect((await (await api()).json()).items).toHaveLength(0);
+});
+
+it('renders authenticated previews without counting pulls, while public flags cannot suppress tracking', async () => {
+    const { app, api, kv } = await setup();
+    await api('', 'POST', { ...payload('Preview'), code: 'previewed' });
+    expect((await app.request('/admin/api/subscriptions/previewed/preview/c')).status).toBe(401);
+    for (const format of ['c', 'b', 's', 'x']) {
+        const res = await api('/previewed/preview/' + format);
+        expect(res.status).toBe(200);
+        expect(res.headers.get('cache-control')).toBe('no-store');
+        expect((await (await api('/previewed')).json()).lastFetchedAt).toBeNull();
+    }
+    expect((await api('/previewed/preview/unknown')).status).toBe(400);
+    await app.request('/c/previewed?preview=1');
+    const pulled = (await (await api('/previewed')).json()).lastFetchedAt;
+    expect(pulled).toBeGreaterThan(0);
+    await api('/previewed/preview/c');
+    expect(await new ShortLinkService(kv).getLastFetchedAt('previewed')).toBe(pulled);
+});

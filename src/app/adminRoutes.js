@@ -14,7 +14,7 @@ const SESSION_MAX_AGE_SECONDS = 7 * 24 * 60 * 60;
  * @param {import('hono').Hono} app
  * @param {{ runtime: object, services: object, auth: { cookieName: string, isEnabled: boolean, issueToken: () => Promise<string>, verifyToken: (token?: string | null) => Promise<boolean> } }} deps
  */
-export function registerAdminRoutes(app, { runtime, services, auth }) {
+export function registerAdminRoutes(app, { runtime, services, auth, previewSubscription }) {
     const logger = runtime.logger;
     const adminConfig = services.adminConfig;
 
@@ -82,6 +82,14 @@ export function registerAdminRoutes(app, { runtime, services, auth }) {
         } catch (error) { return handleAdminError(c, error, logger); }
     });
 
+    app.get('/admin/api/subscriptions/:code/preview/:format', requireAuth, async (c) => {
+        const formats = { c: 'clash', b: 'singbox', s: 'surge', x: 'xray' };
+        const format = c.req.param('format');
+        if (!Object.hasOwn(formats, format)) return c.json({ error: 'Unsupported subscription format' }, 400);
+        // Preview has its own authenticated route so public query flags cannot suppress pull tracking.
+        return previewSubscription(c, formats[format]);
+    });
+
     app.get('/admin/api/subscriptions/:code', requireAuth, async (c) => {
         try {
             const record = await subscriptions().getRecord(c.req.param('code'));
@@ -109,7 +117,7 @@ export function registerAdminRoutes(app, { runtime, services, auth }) {
                 record.queryString = '?' + params.toString();
             }
             await service.write(record);
-            return c.json(record, create ? 201 : 200);
+            return c.json(await service.withAccess(record), create ? 201 : 200);
         } catch (error) { return handleAdminError(c, error, logger); }
     };
     app.post('/admin/api/subscriptions', requireAuth, saveSubscription(true));
