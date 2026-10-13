@@ -112,7 +112,9 @@ describe('buildTemplateClashSections', () => {
                 proxies: ['HK-Edge', 'US-Relay'],
                 url: 'http://www.gstatic.com/generate_204',
                 interval: 300,
-                tolerance: 50
+                tolerance: 50,
+                use: PROVIDER_NAMES,
+                filter: '(?i)(?:(HK|US))'
             });
 
             const withCountryPrefix = buildTemplateClashSections({
@@ -135,14 +137,125 @@ describe('buildTemplateClashSections', () => {
             expect(catchAll.interval).toBe(60);
         });
 
-        it('adds provider names to .*-matched groups', () => {
+        it('keeps catch-all providers unfiltered and narrows regex-matched providers', () => {
             const manual = sections.proxyGroups.find(group => group.name === 'Manual');
 
             expect(manual.proxies).toEqual(PROXY_NAMES);
             expect(manual.use).toEqual(PROVIDER_NAMES);
+            expect(manual.filter).toBeUndefined();
 
             const auto = sections.proxyGroups.find(group => group.name === 'Auto');
-            expect(auto.use).toBeUndefined();
+            expect(auto.use).toEqual(PROVIDER_NAMES);
+            expect(auto.filter).toBe('(?i)(?:(HK|US))');
+        });
+
+        it('filters provider nodes for a select group with a regex and group reference', () => {
+            const groups = buildTemplateClashSections({
+                subconverterLines: [
+                    'custom_proxy_group=🚀 标准选择`select`.*',
+                    'custom_proxy_group=📦 低质高量`select`[]🚀 标准选择`hc'
+                ]
+            }, { providerNames: PROVIDER_NAMES }).proxyGroups;
+
+            expect(groups.find(group => group.name === '🚀 标准选择')).toEqual({
+                name: '🚀 标准选择',
+                type: 'select',
+                proxies: [],
+                use: PROVIDER_NAMES
+            });
+            expect(groups.find(group => group.name === '📦 低质高量')).toEqual({
+                name: '📦 低质高量',
+                type: 'select',
+                proxies: ['🚀 标准选择'],
+                use: PROVIDER_NAMES,
+                filter: '(?i)(?:hc)'
+            });
+        });
+
+        it('matches both inline nodes and remote providers in mixed mode', () => {
+            const { proxyGroups } = buildTemplateClashSections({
+                subconverterLines: ['custom_proxy_group=Filtered`select`[]DIRECT`hc']
+            }, { proxyNames: ['HC-inline', 'JP-inline'], providerNames: PROVIDER_NAMES });
+
+            expect(proxyGroups[0]).toEqual({
+                name: 'Filtered',
+                type: 'select',
+                proxies: ['DIRECT', 'HC-inline'],
+                use: PROVIDER_NAMES,
+                filter: '(?i)(?:hc)'
+            });
+        });
+
+        it('combines multiple select regexes without changing their precedence', () => {
+            const { proxyGroups } = buildTemplateClashSections({
+                subconverterLines: ['custom_proxy_group=Filtered`select`[]DIRECT`^HC-`JP$']
+            }, { providerNames: PROVIDER_NAMES });
+
+            const group = proxyGroups[0];
+            expect(group.use).toEqual(PROVIDER_NAMES);
+            expect(group.filter).toBe('(?i)(?:(?:^HC-)|(?:JP$))');
+            const regex = new RegExp(group.filter.replace(/^\(\?i\)/, ''), 'i');
+            expect(regex.test('hc-edge')).toBe(true);
+            expect(regex.test('TokyoJP')).toBe(true);
+            expect(regex.test('TokyoJP-2')).toBe(false);
+            expect(regex.test('other-node')).toBe(false);
+        });
+
+        it('keeps .* as an unfiltered provider catch-all even alongside another regex', () => {
+            const { proxyGroups } = buildTemplateClashSections({
+                subconverterLines: [
+                    'custom_proxy_group=All`select`[]DIRECT`hc`.*',
+                    'custom_proxy_group=Auto`url-test`.*`http://x`60'
+                ]
+            }, { providerNames: PROVIDER_NAMES });
+
+            for (const group of proxyGroups) {
+                expect(group.use).toEqual(PROVIDER_NAMES);
+                expect(group.filter).toBeUndefined();
+            }
+        });
+
+        it('filters url-test providers without requiring any inline nodes', () => {
+            const { proxyGroups } = buildTemplateClashSections({
+                subconverterLines: ['custom_proxy_group=Auto`url-test`hc`http://x`60']
+            }, { providerNames: PROVIDER_NAMES });
+
+            expect(proxyGroups[0]).toEqual({
+                name: 'Auto',
+                type: 'url-test',
+                proxies: [],
+                url: 'http://x',
+                interval: 60,
+                use: PROVIDER_NAMES,
+                filter: '(?i)(?:hc)'
+            });
+        });
+
+        it('supports INI (?i) prefix for both inline and provider matching', () => {
+            const { proxyGroups } = buildTemplateClashSections({
+                subconverterLines: ['custom_proxy_group=Filtered`select`(?i)hc']
+            }, { proxyNames: ['HC-inline', 'JP-inline'], providerNames: PROVIDER_NAMES });
+
+            expect(proxyGroups[0]).toMatchObject({
+                proxies: ['HC-inline'],
+                use: PROVIDER_NAMES,
+                filter: '(?i)(?:hc)'
+            });
+        });
+
+        it('never attaches unfiltered providers to refs-only or invalid-regex groups', () => {
+            const { proxyGroups } = buildTemplateClashSections({
+                subconverterLines: [
+                    'custom_proxy_group=Refs`select`[]DIRECT',
+                    'custom_proxy_group=Invalid`select`[]DIRECT`('
+                ]
+            }, { providerNames: PROVIDER_NAMES });
+
+            for (const group of proxyGroups) {
+                expect(group.proxies).toEqual(['DIRECT']);
+                expect(group.use).toBeUndefined();
+                expect(group.filter).toBeUndefined();
+            }
         });
 
         it('keeps only the groups that end up with members', () => {

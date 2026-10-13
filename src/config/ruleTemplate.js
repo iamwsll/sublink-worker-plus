@@ -143,12 +143,18 @@ function buildRuleSections(template) {
 	return { ruleProviders, rules: [...rules, ...finalRules] };
 }
 
+function normalizeGroupPattern(pattern) {
+	// JavaScript does not support (?i), but INI templates and Mihomo do.
+	return pattern.replace(/^\(\?i\)/, '');
+}
+
 function compileGroupMatcher(pattern) {
-	if (!pattern || pattern === '.*') {
+	const normalizedPattern = normalizeGroupPattern(pattern);
+	if (!normalizedPattern || normalizedPattern === '.*') {
 		return () => true;
 	}
 	try {
-		const regex = new RegExp(pattern, 'i');
+		const regex = new RegExp(normalizedPattern, 'i');
 		return name => regex.test(name);
 	} catch {
 		return () => false;
@@ -158,6 +164,32 @@ function compileGroupMatcher(pattern) {
 function getMatchedProxyNames(pattern, proxyNames) {
 	const matcher = compileGroupMatcher(pattern);
 	return proxyNames.filter(name => matcher(name));
+}
+
+function attachMatchingProviders(group, patterns, providerNames) {
+	if (providerNames.length === 0) return;
+
+	const validPatterns = patterns
+		.filter(pattern => pattern && !pattern.startsWith('[]'))
+		.map(normalizeGroupPattern)
+		.filter(pattern => {
+			try {
+				new RegExp(pattern, 'i');
+				return true;
+			} catch {
+				return false;
+			}
+		});
+	if (validPatterns.length === 0) return;
+
+	// Provider nodes remain remote, so Mihomo filters them when subscriptions refresh.
+	group.use = providerNames;
+	if (!validPatterns.some(pattern => !pattern || pattern === '.*')) {
+		const combined = validPatterns.length === 1
+			? validPatterns[0]
+			: validPatterns.map(pattern => `(?:${pattern})`).join('|');
+		group.filter = `(?i)(?:${combined})`;
+	}
 }
 
 function parseUrlTestTiming(value = '') {
@@ -237,9 +269,7 @@ function buildProxyGroups(template, { proxyNames = [], providerNames = [] } = {}
 				url,
 				...parseUrlTestTiming(timing)
 			};
-			if (providerNames.length > 0 && pattern === '.*') {
-				group.use = providerNames;
-			}
+			attachMatchingProviders(group, [pattern], providerNames);
 			return dedupeMembers(group);
 		}
 
@@ -249,9 +279,7 @@ function buildProxyGroups(template, { proxyNames = [], providerNames = [] } = {}
 			proxies: []
 		};
 		appendGroupMembers(group, parts, proxyNames);
-		if (providerNames.length > 0 && parts.includes('.*')) {
-			group.use = providerNames;
-		}
+		attachMatchingProviders(group, parts, providerNames);
 		return dedupeMembers(group);
 	}).filter(Boolean);
 
