@@ -109,14 +109,16 @@ export function buildTemplateSingboxSections(template, { proxyNames = [], provid
 				...(group.url ? { url: group.url } : {}),
 				...(group.interval ? { interval: `${group.interval}s` } : {}),
 				...(group.tolerance ? { tolerance: group.tolerance } : {}),
-				...(group.use ? { providers: group.use } : {})
+				...(group.use ? { providers: group.use } : {}),
+				...(group.filter ? { includes: [group.filter] } : {})
 			};
 		}
 		return {
 			type: 'selector',
 			tag: group.name,
 			outbounds: group.proxies,
-			...(group.use ? { providers: group.use } : {})
+			...(group.use ? { providers: group.use } : {}),
+			...(group.filter ? { includes: [group.filter] } : {})
 		};
 	});
 
