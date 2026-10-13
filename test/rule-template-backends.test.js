@@ -36,6 +36,31 @@ describe('buildTemplateSingboxSections', () => {
         expect(proxy).toEqual({ type: 'selector', tag: 'Proxy', outbounds: ['Auto', 'DIRECT'] });
     });
 
+    it('preserves regex filtering for selector and urltest provider members', () => {
+        const { outbounds } = buildTemplateSingboxSections({
+            subconverterLines: [
+                'custom_proxy_group=Auto`url-test`hc`http://x`300',
+                'custom_proxy_group=Filtered`select`[]Auto`hc',
+                'custom_proxy_group=All`select`.*'
+            ]
+        }, { proxyNames: ['HC-inline', 'JP-inline'], providerNames: ['provider-1'] });
+
+        expect(outbounds.find(outbound => outbound.tag === 'Auto')).toMatchObject({
+            type: 'urltest',
+            outbounds: ['HC-inline'],
+            providers: ['provider-1'],
+            includes: ['(?i)(?:hc)']
+        });
+        expect(outbounds.find(outbound => outbound.tag === 'Filtered')).toEqual({
+            type: 'selector',
+            tag: 'Filtered',
+            outbounds: ['Auto', 'HC-inline'],
+            providers: ['provider-1'],
+            includes: ['(?i)(?:hc)']
+        });
+        expect(outbounds.find(outbound => outbound.tag === 'All').includes).toBeUndefined();
+    });
+
     it('rewrites classical list URLs and passes .srs through as binary', () => {
         const rewritten = [];
         const { ruleSets, rules } = buildTemplateSingboxSections(TEMPLATE, {
