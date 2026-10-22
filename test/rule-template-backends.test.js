@@ -36,7 +36,7 @@ describe('buildTemplateSingboxSections', () => {
         expect(proxy).toEqual({ type: 'selector', tag: 'Proxy', outbounds: ['Auto', 'DIRECT'] });
     });
 
-    it('preserves regex filtering for selector and urltest provider members', () => {
+    it('filters concrete nodes without emitting fork-only provider fields', () => {
         const { outbounds } = buildTemplateSingboxSections({
             subconverterLines: [
                 'custom_proxy_group=Auto`url-test`hc`http://x`300',
@@ -48,17 +48,17 @@ describe('buildTemplateSingboxSections', () => {
         expect(outbounds.find(outbound => outbound.tag === 'Auto')).toMatchObject({
             type: 'urltest',
             outbounds: ['HC-inline'],
-            providers: ['provider-1'],
-            includes: ['(?i)(?:hc)']
         });
         expect(outbounds.find(outbound => outbound.tag === 'Filtered')).toEqual({
             type: 'selector',
             tag: 'Filtered',
             outbounds: ['Auto', 'HC-inline'],
-            providers: ['provider-1'],
-            includes: ['(?i)(?:hc)']
         });
-        expect(outbounds.find(outbound => outbound.tag === 'All').includes).toBeUndefined();
+        expect(outbounds.find(outbound => outbound.tag === 'All').outbounds).toEqual(['HC-inline', 'JP-inline']);
+        outbounds.forEach(outbound => {
+            expect(outbound).not.toHaveProperty('providers');
+            expect(outbound).not.toHaveProperty('includes');
+        });
     });
 
     it('rewrites classical list URLs and passes .srs through as binary', () => {

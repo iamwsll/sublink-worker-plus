@@ -855,6 +855,47 @@ describe('/subconverter customization', () => {
     });
 });
 describe('/singbox templates', () => {
+    it.each(['1.11', '1.12', '1.14'])('inlines remote nodes and preserves template filters for %s', async (version) => {
+        const kv = new MemoryKVAdapter();
+        const template = {
+            ...MINI_TEMPLATE,
+            isDefault: true,
+            subconverterLines: [
+                'custom_proxy_group=Auto`url-test`hc`http://www.gstatic.com/generate_204`300,,50',
+                'custom_proxy_group=Proxy`select`[]Auto`hc',
+                'ruleset=Proxy,[]FINAL'
+            ]
+        };
+        await seedAdminConfig(kv, { templates: [template] });
+        const subscription = JSON.stringify({
+            outbounds: [
+                { type: 'shadowsocks', tag: 'HC-remote', server: 'hc.test', server_port: 443, method: 'aes-128-gcm', password: 'test' },
+                { type: 'shadowsocks', tag: 'JP-remote', server: 'jp.test', server_port: 443, method: 'aes-128-gcm', password: 'test' }
+            ],
+            outbound_providers: [{ tag: 'legacy', type: 'http', download_url: 'https://legacy.test/sub' }],
+            route: { final: 'DIRECT' }
+        });
+        vi.stubGlobal('fetch', vi.fn(async () => new Response(subscription, {
+            headers: { 'content-type': 'application/json' }
+        })));
+        const res = await createTestApp({ kv }).request(url('/singbox', {
+            config: `https://subscription-${version}.test/sub`, singbox_version: version
+        }));
+        expect(res.status).toBe(200);
+        const config = await res.json();
+        expect(config.outbounds.filter(o => o.server).map(o => o.tag)).toEqual(['HC-remote', 'JP-remote']);
+        expect(config.outbounds.find(o => o.tag === 'Auto')).toMatchObject({
+            outbounds: ['HC-remote'], interval: '300s', tolerance: 50
+        });
+        expect(config.outbounds.find(o => o.tag === 'Proxy').outbounds).toEqual(['Auto', 'HC-remote']);
+        expect(config.route.final).toBe('Proxy');
+        expect(config).not.toHaveProperty('outbound_providers');
+        config.outbounds.forEach(outbound => {
+            expect(outbound).not.toHaveProperty('providers');
+            expect(outbound).not.toHaveProperty('includes');
+        });
+    });
+
     it('applies the default template to route rules and group outbounds', async () => {
         const kv = new MemoryKVAdapter();
         await seedAdminConfig(kv, { templates: [{ ...MINI_TEMPLATE, enabled: true, isDefault: true }] });

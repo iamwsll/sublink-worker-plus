@@ -51,8 +51,8 @@ function singboxTarget(target) {
  * `rewriteRuleSetUrl(url)` converts a remote classical list URL into one sing-box
  * can consume (the /ruleset/singbox endpoint); .srs/.json URLs pass through as-is.
  */
-export function buildTemplateSingboxSections(template, { proxyNames = [], providerNames = [], rewriteRuleSetUrl } = {}) {
-	const groups = compileTemplateGroups(template, { proxyNames, providerNames });
+export function buildTemplateSingboxSections(template, { proxyNames = [], rewriteRuleSetUrl } = {}) {
+	const groups = compileTemplateGroups(template, { proxyNames, providerNames: [] });
 	const rules = filterDanglingRules(parseTemplateRules(template), groups);
 
 	const ruleSets = [];
@@ -109,16 +109,12 @@ export function buildTemplateSingboxSections(template, { proxyNames = [], provid
 				...(group.url ? { url: group.url } : {}),
 				...(group.interval ? { interval: `${group.interval}s` } : {}),
 				...(group.tolerance ? { tolerance: group.tolerance } : {}),
-				...(group.use ? { providers: group.use } : {}),
-				...(group.filter ? { includes: [group.filter] } : {})
 			};
 		}
 		return {
 			type: 'selector',
 			tag: group.name,
 			outbounds: group.proxies,
-			...(group.use ? { providers: group.use } : {}),
-			...(group.filter ? { includes: [group.filter] } : {})
 		};
 	});
 
