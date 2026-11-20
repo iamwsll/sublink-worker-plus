@@ -24,61 +24,46 @@ jobs:
       - name: Install wrangler
         run: npm install -g wrangler
       
-      - name: Check and Create KV Namespace
+      - name: Verify Cloudflare deployment credentials
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
         run: |
-          KV_NAMESPACE="SUBLINK_KV"
-          echo "Checking for KV namespace: $KV_NAMESPACE"
-          if ! LIST_OUTPUT=$(wrangler kv namespace list 2>&1); then
-            echo "Error getting KV namespace list: $LIST_OUTPUT"
+          if [ -z "$CLOUDFLARE_API_TOKEN" ] || [ -z "$CLOUDFLARE_ACCOUNT_ID" ]; then
+            echo "::error::Configure repository Actions secrets CLOUDFLARE_API_TOKEN and CF_ACCOUNT_ID before deployment."
             exit 1
           fi
-          
-          LIST_OUTPUT=$(echo "$LIST_OUTPUT" | grep -v "Cloudflare collects" | grep -v "telemetry")
-          echo "Cleaned KV namespace list output: $LIST_OUTPUT"
-          
-          if ! echo "$LIST_OUTPUT" | jq empty; then
-            echo "Invalid JSON output from wrangler"
-            exit 1
-          fi
-          
-          KV_ID=$(echo "$LIST_OUTPUT" | jq -r '.[] | select(.title == "sublink-worker-'$KV_NAMESPACE'") | .id')
-          
-          if [ -z "$KV_ID" ]; then
-              echo "KV namespace $KV_NAMESPACE does not exist. Creating..."
-              CREATE_OUTPUT=$(wrangler kv namespace create "sublink-worker-$KV_NAMESPACE" 2>&1)
-              echo "Create KV namespace output: $CREATE_OUTPUT"
-              KV_ID=$(echo "$CREATE_OUTPUT" | grep -o '[0-9a-f]\{32\}')
-              
-              if [ -z "$KV_ID" ]; then
-                  echo "Failed to extract KV ID. Full output: $CREATE_OUTPUT"
-                  exit 1
-              fi
-              
-              echo "KV namespace $KV_NAMESPACE created successfully with ID: $KV_ID"
-          else
-              echo "KV namespace $KV_NAMESPACE already exists with ID: $KV_ID"
-          fi
-          echo "KV_ID=$KV_ID" >> $GITHUB_ENV
-          
-      - name: Update wrangler.toml
+
+      - name: Resolve existing SUBLINK_KV namespace
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
         run: |
-          # Read the entire content of wrangler.toml
-          WRANGLER_CONTENT=$(cat wrangler.toml)
-          
-          # Update the KV namespace ID
-          UPDATED_CONTENT=$(echo "$WRANGLER_CONTENT" | sed 's/id = "[^"]*"/id = "'$KV_ID'"/')
-          
-          # Write the updated content back to wrangler.toml
-          echo "$UPDATED_CONTENT" > wrangler.toml
-          
-          echo "Updated wrangler.toml content:"
-          cat wrangler.toml
-          
+          # Reuse the production KV. Never auto-create a new empty namespace.
+          LIST_OUTPUT=$(wrangler kv namespace list)
+          KV_ID=$(printf '%s' "$LIST_OUTPUT" | jq -er '.[] | select(.title == "SUBLINK_KV") | .id')
+          if ! [[ "$KV_ID" =~ ^[0-9a-f]{32}$ ]]; then
+            echo "::error::Existing SUBLINK_KV namespace was not found or has an invalid ID."
+            exit 1
+          fi
+          echo "KV_ID=$KV_ID" >> "$GITHUB_ENV"
+
+      - name: Bind only the existing SUBLINK_KV namespace
+        run: |
+          node - <<'NODE'
+          const fs = require('node:fs');
+          const content = fs.readFileSync('wrangler.toml', 'utf8');
+          const pattern = /(\{\s*binding\s*=\s*"SUBLINK_KV"\s*,\s*id\s*=\s*")[^"]+("\s*\})/g;
+          if ([...content.matchAll(pattern)].length !== 1) {
+            throw new Error('Expected exactly one SUBLINK_KV binding in wrangler.toml');
+          }
+          fs.writeFileSync('wrangler.toml', content.replace(pattern, (_, first, last) => first + process.env.KV_ID + last));
+          NODE
+
       - name: Deploy to Cloudflare Workers
         uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           command: deploy
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
