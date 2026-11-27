@@ -14,6 +14,58 @@ const ANYTLS_OPTION_KEYS = {
     'min-idle-session': 'min_idle_session'
 };
 
+// sing-box V2Ray transports and the fields each accepts; sing-box rejects
+// unknown types and fields, so one stray value would fail the whole config.
+const SINGBOX_TRANSPORT_FIELDS = {
+    http: ['host', 'path', 'method', 'headers', 'idle_timeout', 'ping_timeout'],
+    ws: ['path', 'headers', 'max_early_data', 'early_data_header_name'],
+    quic: [],
+    grpc: ['service_name', 'idle_timeout', 'ping_timeout', 'permit_without_stream'],
+    httpupgrade: ['host', 'path', 'headers']
+};
+const SINGBOX_TRANSPORT_ALIASES = { h2: 'http' };
+
+// Returns null when sing-box has no equivalent (xhttp, kcp, ...): dropping
+// that node keeps the rest of the config loadable.
+function toSingboxTransport(transport) {
+    if (!transport?.type) return undefined;
+    const type = SINGBOX_TRANSPORT_ALIASES[transport.type] ?? transport.type;
+    const fields = SINGBOX_TRANSPORT_FIELDS[type];
+    if (!fields) return null;
+    const result = { type };
+    fields.forEach((key) => {
+        if (transport[key] !== undefined) result[key] = transport[key];
+    });
+    return result;
+}
+
+// sing-box bundles only these SIP003 plugins, keyed by the IR's Clash names.
+const SINGBOX_SS_PLUGINS = {
+    obfs: { name: 'obfs-local', keys: { mode: 'obfs', host: 'obfs-host' } },
+    'v2ray-plugin': { name: 'v2ray-plugin', keys: {} }
+};
+
+// SIP003 reserves these as separators inside the options string.
+const escapeSip003 = (value) => String(value).replace(/[\\=;]/g, '\\$&');
+
+// sing-box reads plugin options as a SIP003 string ("obfs=http;obfs-host=a.com")
+// where a bare key is a flag, and fails the whole config on an object. Returns
+// null when sing-box lacks the plugin, so only that node is dropped.
+function toSingboxPlugin(plugin, opts) {
+    const spec = SINGBOX_SS_PLUGINS[plugin];
+    if (!spec) return null;
+    const pluginOpts = Object.entries(opts ?? {}).flatMap(([key, value]) => {
+        const name = spec.keys[key] ?? key;
+        if (value === true) return [name];
+        // sing-box enables `tls` by mere presence, but reads `mux` as a
+        // count whose absence means 1, so false needs a different spelling.
+        if (value === false) return name === 'mux' ? ['mux=0'] : [];
+        if (value == null || typeof value === 'object') return [];
+        return [`${name}=${escapeSip003(value)}`];
+    }).join(';');
+    return { plugin: spec.name, ...(pluginOpts ? { plugin_opts: pluginOpts } : {}) };
+}
+
 function isDirectDnsServer(server, outbounds = []) {
     if (!server?.tag || server.type === 'fakeip') return false;
     if (!server.detour) return true;
@@ -53,6 +105,13 @@ export class SingboxConfigBuilder extends BaseConfigBuilder {
     }
 
     convertProxy(proxy) {
+        // sing-box has no VLESS encryption option and the server rejects clients
+        // without it, so emitting the node would only add a dead outbound.
+        if (proxy.type === 'vless' && proxy.encryption) return null;
+        // AnyTLS arrived in sing-box 1.12; 1.11 rejects the unknown outbound
+        // type and with it the whole config.
+        if (proxy.type === 'anytls' && this.singboxVersion === '1.11') return null;
+
         // Create a shallow copy to avoid mutating the original
         const sanitized = { ...proxy };
 
@@ -81,8 +140,19 @@ export class SingboxConfigBuilder extends BaseConfigBuilder {
         delete sanitized.udp;
         delete sanitized.network;
 
-        // Mihomo-only Reality extension is invalid in sing-box TLS schema.
-        // Clone nested objects so the original parsed proxy remains untouched.
+        if (sanitized.plugin) {
+            const plugin = toSingboxPlugin(sanitized.plugin, sanitized.plugin_opts);
+            if (!plugin) return null;
+            delete sanitized.plugin_opts;
+            Object.assign(sanitized, plugin);
+        }
+
+        const transport = toSingboxTransport(sanitized.transport);
+        if (transport === null) return null;
+        if (transport) sanitized.transport = transport;
+        else delete sanitized.transport;
+
+        // This Mihomo-only Reality option is not part of the sing-box TLS schema.
         if (sanitized.tls?.reality?.support_x25519mlkem768 !== undefined) {
             sanitized.tls = { ...sanitized.tls, reality: { ...sanitized.tls.reality } };
             delete sanitized.tls.reality.support_x25519mlkem768;

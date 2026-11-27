@@ -43,6 +43,14 @@ describe('sing-box 1.13+ compatibility: no legacy inbound fields', () => {
         }
     });
 
+    it('lets the client choose the TUN stack for both built-in configs', () => {
+        for (const config of [SING_BOX_CONFIG, SING_BOX_CONFIG_V1_11]) {
+            const tun = config.inbounds.find(inbound => inbound.type === 'tun');
+            expect(tun).toBeDefined();
+            expect(tun).not.toHaveProperty('stack');
+        }
+    });
+
     it('base configs should not contain legacy special outbounds', () => {
         for (const config of [SING_BOX_CONFIG, SING_BOX_CONFIG_V1_11]) {
             const outboundTypes = config.outbounds.map(outbound => outbound.type);
