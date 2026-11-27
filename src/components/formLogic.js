@@ -643,10 +643,13 @@ export const formLogicFn = (t) => {
                             const query = new URL(url).search;
                             let returnedCode = codesByQuery.get(query);
                             if (!returnedCode) {
-                                let apiUrl = `${origin}/shorten-v2?url=${encodeURIComponent(url)}`;
                                 // Different format-specific parameters must not overwrite one another.
-                                if (customCode) apiUrl += `&shortCode=${encodeURIComponent(codesByQuery.size ? customCode + '-' + type : customCode)}`;
-                                const response = await fetch(apiUrl);
+                                const shortCode = customCode && (codesByQuery.size ? `${customCode}-${type}` : customCode);
+                                const response = await fetch(`${origin}/shorten-v2`, {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify(shortCode ? { url, shortCode } : { url })
+                                });
                                 if (!response.ok) throw new Error(`Failed to shorten ${type} link`);
                                 returnedCode = await response.text();
                                 codesByQuery.set(query, returnedCode);

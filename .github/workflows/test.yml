@@ -4,13 +4,19 @@ on:
   push:
     branches:
       - main
+      - 'sync/upstream/**'
   pull_request:
+
+permissions:
+  contents: read
 
 jobs:
   test:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -18,7 +24,10 @@ jobs:
           node-version: '22'
           
       - name: Install dependencies
-        run: npm install
+        run: npm ci
         
       - name: Run tests
         run: npm test
+
+      - name: Build Worker without deploying
+        run: npx --no-install wrangler deploy --dry-run --outdir "$RUNNER_TEMP/sublink-worker"

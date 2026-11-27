@@ -48,17 +48,6 @@ function getClashUdpValue(proxy, defaultEnabled = true) {
     return defaultEnabled;
 }
 
-function buildClashRealityOptions(reality) {
-    if (!reality?.enabled) return undefined;
-    return {
-        'public-key': reality.public_key,
-        'short-id': reality.short_id,
-        ...(typeof reality.support_x25519mlkem768 === 'boolean'
-            ? { 'support-x25519mlkem768': reality.support_x25519mlkem768 }
-            : {})
-    };
-}
-
 export class ClashConfigBuilder extends BaseConfigBuilder {
     constructor(inputString, selectedRules, customRules, baseConfig, lang, userAgent, groupByCountry = false, enableClashUI = false, externalController, externalUiDownloadUrl, includeAutoSelect = true, groupDefaults = {}, forceUdp = undefined, customRuleGroups = []) {
         if (!baseConfig) {
@@ -167,6 +156,7 @@ export class ClashConfigBuilder extends BaseConfigBuilder {
                     alterId: proxy.alter_id ?? 0,
                     cipher: proxy.security,
                     tls: proxy.tls?.enabled || false,
+                    'client-fingerprint': proxy.tls?.utls?.fingerprint,
                     servername: proxy.tls?.server_name || '',
                     'skip-cert-verify': !!proxy.tls?.insecure,
                     network: proxy.transport?.type || proxy.network || 'tcp',
@@ -208,6 +198,7 @@ export class ClashConfigBuilder extends BaseConfigBuilder {
                     server: proxy.server,
                     port: proxy.server_port,
                     uuid: proxy.uuid,
+                    ...(proxy.encryption ? { encryption: proxy.encryption } : {}),
                     cipher: proxy.security,
                     tls: proxy.tls?.enabled || false,
                     'client-fingerprint': proxy.tls?.utls?.fingerprint,
@@ -217,7 +208,16 @@ export class ClashConfigBuilder extends BaseConfigBuilder {
                         path: proxy.transport.path,
                         headers: proxy.transport.headers
                     } : undefined,
-                    'reality-opts': buildClashRealityOptions(proxy.tls?.reality),
+                    'xhttp-opts': proxy.transport?.type === 'xhttp' ? {
+                        path: proxy.transport.path,
+                        host: proxy.transport.headers?.host,
+                        mode: proxy.transport.mode
+                    } : undefined,
+                    'reality-opts': proxy.tls?.reality?.enabled ? {
+                        'public-key': proxy.tls.reality.public_key,
+                        'short-id': proxy.tls.reality.short_id,
+                        'support-x25519mlkem768': proxy.tls.reality.support_x25519mlkem768,
+                    } : undefined,
                     'grpc-opts': proxy.transport?.type === 'grpc' ? {
                         'grpc-service-name': proxy.transport.service_name,
                     } : undefined,
@@ -264,7 +264,11 @@ export class ClashConfigBuilder extends BaseConfigBuilder {
                         path: proxy.transport.path,
                         headers: proxy.transport.headers
                     } : undefined,
-                    'reality-opts': buildClashRealityOptions(proxy.tls?.reality),
+                    'reality-opts': proxy.tls?.reality?.enabled ? {
+                        'public-key': proxy.tls.reality.public_key,
+                        'short-id': proxy.tls.reality.short_id,
+                        'support-x25519mlkem768': proxy.tls.reality.support_x25519mlkem768,
+                    } : undefined,
                     'grpc-opts': proxy.transport?.type === 'grpc' ? {
                         'grpc-service-name': proxy.transport.service_name,
                     } : undefined,

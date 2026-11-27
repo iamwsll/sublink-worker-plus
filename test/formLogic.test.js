@@ -37,20 +37,22 @@ describe('formLogic toString fix', () => {
 it('keeps different format parameters in separate short codes while reusing identical queries', async () => {
   const calls = [];
   const fakeWindow = { APP_TRANSLATIONS: {}, PREDEFINED_RULE_SETS: {}, location: { origin: 'https://example.com' } };
-  const fakeFetch = async url => {
-    calls.push(url);
+  const fakeFetch = async (url, options) => {
+    calls.push({ url, method: options.method, body: JSON.parse(options.body) });
     return { ok: true, text: async () => 'code' + calls.length };
   };
   const data = new Function('window', 'fetch', 'alert', '(' + formLogicFn.toString() + ')(); return window.formData();')(fakeWindow, fakeFetch, message => { throw new Error(message); });
+  const longLink = `https://example.com/clash?config=${'x'.repeat(20000)}`;
   data.generatedLinks = {
-    clash: 'https://example.com/clash?config=first',
+    clash: longLink,
     singbox: 'https://example.com/singbox?config=second',
-    xray: 'https://example.com/xray?config=first'
+    xray: longLink.replace('/clash?', '/xray?')
   };
   data.customShortCode = 'my-code';
   await data.shortenLinks();
-  expect(calls).toHaveLength(2);
-  expect(new URL(calls[0]).searchParams.get('shortCode')).toBe('my-code');
-  expect(new URL(calls[1]).searchParams.get('shortCode')).toBe('my-code-singbox');
+  expect(calls).toEqual([
+    { url: 'https://example.com/shorten-v2', method: 'POST', body: { url: longLink, shortCode: 'my-code' } },
+    { url: 'https://example.com/shorten-v2', method: 'POST', body: { url: data.generatedLinks.singbox, shortCode: 'my-code-singbox' } }
+  ]);
   expect(data.shortenedLinks).toEqual({ clash: 'https://example.com/c/code1', singbox: 'https://example.com/b/code2', xray: 'https://example.com/x/code1' });
 });
