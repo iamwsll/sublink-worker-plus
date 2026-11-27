@@ -11,10 +11,15 @@ on:
   push:
     branches:
       - main
+      - 'sync/upstream/**'
 
 jobs:
   verify:
-    if: github.event_name == 'workflow_dispatch' && inputs.verify_only
+    # Verify the credential used by publish pushes without checking out candidate code.
+    if: >-
+      github.repository == 'iamwsll/sublink-worker-plus' &&
+      ((github.event_name == 'workflow_dispatch' && inputs.verify_only) ||
+      (github.event_name == 'push' && startsWith(github.ref, 'refs/heads/sync/upstream/')))
     permissions: {}
     runs-on: ubuntu-latest
     steps:
